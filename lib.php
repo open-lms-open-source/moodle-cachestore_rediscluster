@@ -73,7 +73,7 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
     /**
      * Connection config.
      *
-     * @var arrray
+     * @var array
      */
     protected $config;
 
@@ -262,7 +262,7 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
      * attempt ito retry before giving up. This value is reset after every
      * successful command.
      *
-     * @param int $count
+     * @param int $limit
      * @return void
      */
     public function set_retry_limit($limit = null) {
@@ -282,6 +282,7 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
 
         $success = false;
         $lastexception = null;
+        $result = null;
 
         while ($this->retrylimit >= 0) {
             $this->retrylimit--;
