@@ -348,7 +348,7 @@ class session extends \core\session\handler {
          */
         while (!$haslock) {
             $expiry = time() + $this->lockexpire;
-            $haslock = $this->connection->command('set', $lockkey, '1', ['NX', 'EX' => $expiry]);
+            $haslock = $this->connection->command('set', $lockkey, '1', ['NX', 'EX' => $this->lockexpire]);
             if ($haslock) {
                 $this->locks[$id] = $expiry;
                 break;
@@ -403,8 +403,11 @@ class session extends \core\session\handler {
     protected function increment($k, $ttl) {
         // Ensure key is created with ttl before proceeding.
         if (!$this->connection->command('exists', $k)) {
+            // We don't want to potentially lose the expiry, so do it in a transaction.
+            $this->connection->command('multi');
             $this->connection->command('incr', $k);
             $this->connection->command('expire', $k, $this->lockexpire);
+            $this->connection->command('exec');
             return 0;
         }
 
