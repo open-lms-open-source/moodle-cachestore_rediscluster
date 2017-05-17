@@ -61,7 +61,8 @@ class sharedconn {
         if (PHPUNIT_TEST) {
             // The name is important because it is part of the prefix.
             $server = CACHESTORE_REDISCLUSTER_TEST_SERVER;
-        } else if (empty($configuration['server'])) {
+        }
+        if (empty($server)) {
             return;
         }
 
