@@ -24,6 +24,8 @@
 
 namespace cachestore_rediscluster;
 
+defined('MOODLE_INTERNAL') || die();
+
 /**
  * RedisCluster Session handler
  *
@@ -54,9 +56,16 @@ class session extends \core\session\handler {
     protected $lockexpire;
 
     /**
-     * The RedisCluster connection object.
+     * This key is used to track which locks a given host currently has held.
      *
-     * @var RedisCluster
+     * @var string
+     */
+    protected $lockhostkey;
+
+    /**
+     * The RedisCluster cachestore object.
+     *
+     * @var cachestore_rediscluster
      */
     protected $connection = null;
 
@@ -144,6 +153,8 @@ class session extends \core\session\handler {
             define('NO_SESSION_LOCK', false);
         }
         $this->nolock = NO_SESSION_LOCK;
+
+        $this->lockhostkey = "mdl_locklist:".gethostname();
     }
 
     /**
@@ -163,9 +174,10 @@ class session extends \core\session\handler {
                     '$CFG->session_redis[\'server\'] must be specified in config.php');
         }
 
-        // The session handler requires a version of Redis extension that supports cluster (>= 2.2.8)
+        // The session handler requires a version of Redis extension that supports cluster (>= 2.2.8).
         if (!class_exists('RedisCluster')) {
-            throw new \moodle_exception('sessionhandlerproblem', 'error', '', null, 'redis extension version must be at least 2.2.8');
+            throw new \moodle_exception('sessionhandlerproblem', 'error', '',null,
+                'redis extension version must be at least 2.2.8');
         }
 
         $this->connection = new \cachestore_rediscluster(null, $this->config);
@@ -303,8 +315,13 @@ class session extends \core\session\handler {
      */
     protected function unlock_session($id) {
         if (isset($this->locks[$id])) {
+            $lockkey = "{$id}.lock";
             $this->connection->set_retry_limit(1); // Try extra hard to unlock the session.
-            $this->connection->command('del', $id.".lock");
+            $this->connection->command('del', $lockkey);
+
+            // Remove the lock from our list of held locks for this host.
+            $this->connection->command_raw('hdel', $this->lockhostkey, "{$this->config['prefix']}{$lockkey}");
+
             unset($this->locks[$id]);
         }
     }
@@ -326,7 +343,6 @@ class session extends \core\session\handler {
         $haslock = isset($this->locks[$id]) && time() < $this->locks[$id];
         $startlocktime = time();
         $waitkey = "{$lockkey}.waiting";
-        $waitpos = 0;
 
         // Create the waiting key, or increment it if we end up queued.
         $waitpos = $this->increment($waitkey, $this->lockexpire);
@@ -348,7 +364,7 @@ class session extends \core\session\handler {
          */
         while (!$haslock) {
             $expiry = time() + $this->lockexpire;
-            $haslock = $this->connection->command('set', $lockkey, '1', ['NX', 'EX' => $this->lockexpire]);
+            $haslock = $this->get_lock($lockkey);
             if ($haslock) {
                 $this->locks[$id] = $expiry;
                 break;
@@ -383,6 +399,32 @@ class session extends \core\session\handler {
         }
     }
 
+    /**
+     * Get a lock, with some metadata embedded in it.
+     *
+     * @param $lockkey The lock key.
+     *
+     * @return bool Did we get a new lock for the provided lockkey.
+     */
+    protected function get_lock($lockkey) {
+        global $CFG;
+
+        $meta = [
+            'createdat' => time(),
+            'instance' => isset($CFG->puppet_instance) ? $CFG->puppet_instance : '',
+            'lockkey' => $lockkey,
+            'script' => isset($_SERVER['SCRIPT_FILENAME']) ? $_SERVER['SCRIPT_FILENAME'] : '',
+        ];
+
+        // Try to get the lock itself.
+        $haslock = $this->connection->command('set', $lockkey, json_encode($meta), ['NX', 'EX' => $this->lockexpire]);
+        if ($haslock) {
+            // Great, lets add it to the list of held locks for this host.
+            $fulllockkey = "{$this->config['prefix']}{$lockkey}";
+            $this->connection->command_raw('hset', $this->lockhostkey, $fulllockkey, $this->lockexpire);
+        }
+        return $haslock;
+    }
 
     protected function error($error = 'sessionhandlerproblem') {
         if (!defined('NO_MOODLE_COOKIES')) {

@@ -157,7 +157,7 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
 
         // Override defaults.
         foreach (array_keys($this->config) as $key) {
-            if (!empty($configuration[$key])) {
+            if (isset($configuration[$key])) {
                 $this->config[$key] = $configuration[$key];
             }
         }
@@ -312,6 +312,26 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
             throw $lastexception;
         }
 
+        return $result;
+    }
+
+    /**
+     * Run a command with no prefix and no serializer.
+     *
+     * @return result of self::command().
+     */
+    public function command_raw() {
+        $args = func_get_args();
+        $prefix = $this->redis->getOption(Redis::OPT_PREFIX);
+
+        $this->redis->setOption(Redis::OPT_PREFIX, '');
+        $this->redis->setOption(Redis::OPT_SERIALIZER, Redis::SERIALIZER_NONE);
+
+        $result = call_user_func_array([$this, 'command'], $args);
+
+        // Return the redis client to the previous state.
+        $this->redis->setOption(Redis::OPT_PREFIX, $prefix);
+        $this->redis->setOption(Redis::OPT_SERIALIZER, $this->config['serializer']);
         return $result;
     }
 
