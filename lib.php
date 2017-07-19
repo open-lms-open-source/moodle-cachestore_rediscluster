@@ -667,4 +667,24 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
     private static function get_testing_name() {
         return 'test_application';
     }
+
+    /**
+     * Generates the appropriate configuration required for unit testing.
+     *
+     * @return array Array of unit test configuration data to be used by initialise().
+     */
+    public static function unit_test_configuration() {
+        global $DB;
+
+        // If the configuration is not defined correctly, return only the configuration know about.
+        $config = [
+            'prefix' => $DB->get_prefix(),
+        ];
+        if (!defined('CACHESTORE_REDISCLUSTER_TEST_SERVER')) {
+            return $config;
+        }
+        $config['server'] = CACHESTORE_REDISCLUSTER_TEST_SERVER;
+        return $config;
+    }
+
 }
