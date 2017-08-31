@@ -63,6 +63,12 @@ class session extends \core\session\handler {
     protected $lockhostkey;
 
     /**
+     * Should we track lock hosts?
+     * @var bool
+     */
+    protected $tracklockhost = false;
+
+    /**
      * The RedisCluster cachestore object.
      *
      * @var cachestore_rediscluster
@@ -141,6 +147,10 @@ class session extends \core\session\handler {
         $this->lockexpire = $CFG->sessiontimeout;
         if (isset($CFG->session_rediscluster['lock_expire'])) {
             $this->lockexpire = (int)$CFG->session_rediscluster['lock_expire'];
+        }
+
+        if (isset($CFG->session_rediscluster['tracklockhost'])) {
+            $this->tracklockhost = $CFG->session_rediscluster['tracklockhost'];
         }
 
         // The following configures the session lifetime in redis to allow some
@@ -319,8 +329,10 @@ class session extends \core\session\handler {
             $this->connection->set_retry_limit(1); // Try extra hard to unlock the session.
             $this->connection->command('del', $lockkey);
 
-            // Remove the lock from our list of held locks for this host.
-            $this->connection->command_raw('hdel', $this->lockhostkey, "{$this->config['prefix']}{$lockkey}");
+            if ($this->tracklockhost) {
+                // Remove the lock from our list of held locks for this host.
+                $this->connection->command_raw('hdel', $this->lockhostkey, "{$this->config['prefix']}{$lockkey}");
+            }
 
             unset($this->locks[$id]);
         }
@@ -418,7 +430,7 @@ class session extends \core\session\handler {
 
         // Try to get the lock itself.
         $haslock = $this->connection->command('set', $lockkey, json_encode($meta), ['NX', 'EX' => $this->lockexpire]);
-        if ($haslock) {
+        if ($haslock && $this->tracklockhost) {
             // Great, lets add it to the list of held locks for this host.
             $fulllockkey = "{$this->config['prefix']}{$lockkey}";
             $this->connection->command_raw('hset', $this->lockhostkey, $fulllockkey, $this->lockexpire);
