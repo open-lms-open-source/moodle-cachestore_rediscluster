@@ -99,6 +99,72 @@ class cachestore_rediscluster_test extends cachestore_tests {
         $this->assertFalse($store->has_all(array('foo', 'bat', 'this')));
     }
 
+    public function test_set_get() {
+        $store = $this->create_cachestore_rediscluster();
+
+        $this->assertTrue($store->set('foo', 'bar'));
+        $this->assertEquals('bar', $store->get('foo'));
+    }
+
+    public function test_set_many() {
+        $store = $this->create_cachestore_rediscluster();
+
+        $kv = [
+            'key1' => 'value1',
+            'key2' => 'value2',
+            'key3' => 'value3',
+        ];
+
+        $data = [];
+        foreach ($kv as $key => $value) {
+            $data[] = ['key' => $key, 'value' => $value];
+        }
+
+        // Verify the keys dont exist yet.
+        $this->assertFalse($store->has_any(array_keys($kv)));
+
+        // Verify the store suceeds in setting them.
+        $this->assertEquals(count($data), $store->set_many($data));
+
+        // Verify they now all exist in the store.
+        $this->assertTrue($store->has_all(array_keys($kv)));
+
+        // Verify their content is correct.
+        $this->assertEquals($kv, $store->get_many(array_keys($kv)));
+    }
+
+    public function test_get_many() {
+        $store = $this->create_cachestore_rediscluster();
+
+        $kv = [
+            'key1' => 'value1',
+            'key2' => 'value2',
+            'key3' => 'value3',
+            'key4' => 'value4',
+            'key5' => 'value5',
+            'key6' => 'value6',
+            'key7' => 'value7',
+            'key8' => 'value8',
+        ];
+
+        $data = [];
+        foreach ($kv as $key => $value) {
+            $data[] = ['key' => $key, 'value' => $value];
+        }
+
+        $store->set_many($data);
+
+        // Verify selecting just some succeeds.
+        $subset = ['key1', 'key3', 'key8'];
+        $expected = [
+            'key1' => 'value1',
+            'key3' => 'value3',
+            'key8' => 'value8',
+        ];
+        $output = $store->get_many($subset);
+        $this->assertEquals($expected, $output);
+    }
+
     public function test_lock() {
         $store = $this->create_cachestore_rediscluster();
 
@@ -108,6 +174,19 @@ class cachestore_rediscluster_test extends cachestore_tests {
         $this->assertNull($store->check_lock_state('notalock', '123'));
         $this->assertFalse($store->release_lock('lock', '321'));
         $this->assertTrue($store->release_lock('lock', '123'));
+    }
+
+    public function test_delete() {
+        $store = $this->create_cachestore_rediscluster();
+
+        $store->set('flange', 'pipe');
+        $this->store->delete('flange');
+        $this->assertFalse($store->has('flange'));
+        $store->set('flange', 'xxx');
+        $store->set('foo', 'bar');
+        $this->assertTrue($store->has_all(['flange', 'foo']));
+        $store->delete_many(['flange', 'foo']);
+        $this->assertFalse($store->has_any(['flange', 'foo']));
     }
 
     public function test_purge() {

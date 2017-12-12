@@ -24,7 +24,7 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->version    = 2017030900;
+$plugin->version    = 2017121200;
 $plugin->requires   = 2016052300;
 $plugin->maturity   = MATURITY_STABLE;
 $plugin->component  = 'cachestore_rediscluster';

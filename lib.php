@@ -35,6 +35,8 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
     const PURGEMODE_UNLINK = 'unlink'; // Redis4.0+ only.
     const PURGEMODE_DEL = 'del';
 
+    const SHARD_SIZE = 8;
+
     /**
      * Name of this store.
      *
@@ -62,6 +64,11 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
      * @var cache_definition
      */
     protected $definition = null;
+
+    /**
+     * @var bool Is this definition sharded across multiple hashes?
+     */
+    protected $sharded = false;
 
     /**
      * Connection to Redis for this store.
@@ -218,7 +225,7 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
      */
     protected function ping($server) {
         try {
-            if ($redis->ping($server) === false) {
+            if ($this->command('ping', $server) === false) {
                 return false;
             }
         } catch (Exception $e) {
@@ -243,8 +250,22 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
      * @return bool
      */
     public function initialise(cache_definition $definition) {
+        global $CFG;
         $this->definition = $definition;
         $this->hash       = $definition->generate_definition_hash();
+
+        // Standard set of definitions we always shard.
+        $sharded = [
+            'adhoc/cachestore_rediscluster_phpunit_shard_test',
+        ];
+
+        // Customisable list of definitions to shard.
+        if (!empty($CFG->redis_sharded) && is_array($CFG->redis_sharded)) {
+            $sharded = array_merge($sharded, $CFG->redis_sharded);
+        }
+        if (in_array($this->definition->get_id(), $sharded)) {
+            $this->sharded = true;
+        }
         return true;
     }
 
@@ -351,7 +372,8 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
      * @return mixed The value of the key, or false if there is no value associated with the key.
      */
     public function get($key) {
-        return $this->command('hGet', $this->hash, $key);
+        $hash = $this->hash_shard($key);
+        return $this->command('hGet', $hash, $key);
     }
 
     /**
@@ -362,8 +384,17 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
      */
     public function get_many($keys) {
         $return = array_fill_keys($keys, false);
-        if ($result = $this->command('hMGet', $this->hash, $keys)) {
-            $return = array_merge($return, $result);
+
+        $hashpairs = [];
+        foreach ($keys as $key) {
+            $hash = $this->hash_shard($key);
+            $hashpairs[$hash][] = $key;
+        }
+
+        foreach ($hashpairs as $hash => $hkeys) {
+            if ($result = $this->command('hMGet', $hash, $hkeys)) {
+                $return = array_merge($return, $result);
+            }
         }
         return $return;
     }
@@ -376,7 +407,23 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
      * @return bool True if the operation succeeded, false otherwise.
      */
     public function set($key, $value) {
-        return ($this->command('hSet', $this->hash, $key, $value) !== false);
+        $hash = $this->hash_shard($key);
+        return ($this->command('hSet', $hash, $key, $value) !== false);
+    }
+
+    /**
+     * Get the particular hash-shard for a given key.
+     *
+     * @param string $key The key to set the value of.
+     * @return string The key of the hash shard for the requested $key.
+     */
+    protected function hash_shard($key) {
+        $hash = $this->hash;
+        if ($this->sharded) {
+            $shard = crc32($key) % self::SHARD_SIZE;
+            $hash = "{$this->hash}-{$shard}";
+        }
+        return $hash;
     }
 
     /**
@@ -387,14 +434,18 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
      * @return int The number of key/value pairs successfuly set.
      */
     public function set_many(array $keyvaluearray) {
-        $pairs = [];
+        $hashpairs = [];
         foreach ($keyvaluearray as $pair) {
-            $pairs[$pair['key']] = $pair['value'];
+            $hash = $this->hash_shard($pair['key']);
+            $hashpairs[$hash][$pair['key']] = $pair['value'];
         }
-        if ($this->command('hMSet', $this->hash, $pairs)) {
-            return count($pairs);
+        $count = 0;
+        foreach ($hashpairs as $hash => $pairs) {
+            if ($this->command('hMSet', $hash, $pairs)) {
+                $count += count($pairs);
+            }
         }
-        return 0;
+        return $count;
     }
 
     /**
@@ -404,7 +455,8 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
      * @return bool True if the delete operation succeeds, false otherwise.
      */
     public function delete($key) {
-        return $this->command('hDel', $this->hash, $key) > 0;
+        $hash = $this->hash_shard($key);
+        return $this->command('hDel', $hash, $key) > 0;
     }
 
     /**
@@ -414,9 +466,19 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
      * @return int The number of keys successfully deleted.
      */
     public function delete_many(array $keys) {
-        array_unshift($keys, $this->hash);
-        array_unshift($keys, 'hDel');
-        return call_user_func_array([$this, 'command'], $keys);
+        $hashpairs = [];
+        foreach ($keys as $key) {
+            $hash = $this->hash_shard($key);
+            $hashpairs[$hash][] = $key;
+        }
+
+        $result = 0;
+        foreach ($hashpairs as $hash => $hkeys) {
+            array_unshift($hkeys, $hash);
+            array_unshift($hkeys, 'hDel');
+            $result += call_user_func_array([$this, 'command'], $hkeys);
+        }
+        return $result;
     }
 
     /**
@@ -425,6 +487,14 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
      * @return bool
      */
     public function purge() {
+        $hashes = [$this->hash];
+        if ($this->sharded) {
+            for ($shard = 0; $shard < self::SHARD_SIZE; $shard++) {
+                $hashes[] = "{$this->hash}-{$shard}";
+            }
+        }
+
+        $result = true;
         if ($this->config['purgemode'] == self::PURGEMODE_LAZY) {
             // DEL is not fast if the hash has a lot of child elements.
             // Rename the key instead, it can be cleaned up later.
@@ -433,16 +503,25 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
 
             // Since the originating key has a prefix in front of it, we need to
             // include it inside the hash tag here for the hashslot calculation.
-            $temp = "gc:tmp:{$gcid}:{{$prefix}{$this->hash}}";
-            $this->set_retry_limit(1);
-            $rename = $this->command('rename', $this->hash, $temp) !== false;
-            $this->command('sadd', 'gc:hash', $temp);
-            return $rename;
+            foreach ($hashes as $hash) {
+                $temp = "gc:tmp:{$gcid}:{{$prefix}{$hash}}";
+                $this->set_retry_limit(1);
+                $result = ($this->command('rename', $hash, $temp) !== false) && $result;
+                $this->command('sadd', 'gc:hash', $temp);
+            }
+            return $result;
         } else if ($this->config['purgemode'] == self::PURGEMODE_UNLINK) {
             // This is not supported before Redis4.
-            return $this->command('unlink', $this->hash) !== false;
+            foreach ($hashes as $hash) {
+                $result = ($this->command('unlink', $hash) !== false) && $result;
+            }
+            return $result;
         }
-        return ($this->command('del', $this->hash) !== false);
+
+        foreach ($hashes as $hash) {
+            $result = ($this->command('del', $hash) !== false) && $result;
+        }
+        return $result;
     }
 
     /**
@@ -487,7 +566,8 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
      * @return bool True if the key exists, false if it does not.
      */
     public function has($key) {
-        return $this->command('hExists', $this->hash, $key);
+        $hash = $this->hash_shard($key);
+        return $this->command('hExists', $hash, $key);
     }
 
     /**
@@ -579,7 +659,7 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
     public static function config_get_configuration_array($data) {
         return [
             'failover' => $data->failover,
-            'persist' => $data->persist,
+            'persist' => !empty($data->persist),
             'prefix' => $data->prefix,
             'purgemode' => $data->purgemode,
             'readtimeout' => $data->readtimeout,
