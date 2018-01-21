@@ -295,7 +295,14 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
 
     public function command() {
         $args = func_get_args();
-        $function = array_shift($args);
+
+        // phpredis only just added unlink as a native function in Jan 2018. So
+        // we need to use rawCommand to do the job.
+        // see: https://github.com/phpredis/phpredis/issues/1299
+        $function = 'rawCommand';
+        if ($args[0] != 'unlink') {
+            $function = array_shift($args);
+        }
 
         if ($this->retrylimit < 0) {
             $this->retrylimit = 0;
