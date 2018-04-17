@@ -26,6 +26,10 @@ namespace cachestore_rediscluster;
 
 defined('MOODLE_INTERNAL') || die();
 
+// We need to explicitly include cachestore_rediscluster here as it isn't able
+// to be autoloaded early on during install/upgrade.
+require_once(__DIR__ . '/../lib.php');
+
 /**
  * RedisCluster Session handler
  *
