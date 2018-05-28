@@ -45,6 +45,7 @@ $string['prefix_help'] = 'This prefix is used for all key names on the Redis ser
 
 If you only have one Moodle instance using this cluster, you can leave this value at its default.';
 $string['prefixinvalid'] = 'Invalid prefix. You can only use a-z A-Z 0-9-_.';
+$string['privacy:metadata'] = 'The RedisCluster cache cachestore plugin stores data briefly as part of its caching functionality but this data is regularly cleared.';
 
 $string['purgemode'] = 'Purge mode';
 $string['purgemode_help'] = 'Which behaviour the store should use to purge old data.
