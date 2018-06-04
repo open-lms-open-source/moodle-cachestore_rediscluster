@@ -180,6 +180,12 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
         $this->connect();
     }
 
+    public function __destruct() {
+        if (!empty($this->redis) && $this->redis instanceof RedisCluster && empty($this->config['persist'])) {
+            $this->redis->close();
+        }
+    }
+
     protected function connect() {
         try {
             $this->redis = $this->new_rediscluster();
