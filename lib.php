@@ -91,6 +91,14 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
      */
     protected $retrylimit = 0;
 
+
+    /**
+     * The actual prefix used with the redis backend. This can differ from what is set on the cache definition.
+     *
+     * @var string
+     */
+    private $internalprefix = '';
+
     /**
      * Determines if the requirements for this type of store are met.
      *
@@ -207,10 +215,10 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
         $servers = explode(',', $dsn);
 
         $this->isready = false;
-        $prefix = $this->config['session'] ? $this->config['prefix'] : $this->config['prefix'].$this->name.'-';
+        $this->internalprefix = $this->config['session'] ? $this->config['prefix'] : $this->config['prefix'].$this->name.'-';
         if ($redis = new RedisCluster(null, $servers, $this->config['timeout'], $this->config['readtimeout'], $this->config['persist'])) {
             $redis->setOption(Redis::OPT_SERIALIZER, $this->config['serializer']);
-            $redis->setOption(Redis::OPT_PREFIX, $prefix);
+            $redis->setOption(Redis::OPT_PREFIX, $this->internalprefix);
             $redis->setOption(RedisCluster::OPT_SLAVE_FAILOVER, $this->config['failover']);
             $this->isready = true;
         }
@@ -302,6 +310,12 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
         $function = 'rawCommand';
         if ($args[0] != 'unlink') {
             $function = array_shift($args);
+        } else {
+            // RedisCluster requires the key as the first argument so it knows
+            // where to send the rawCommand. Being raw, it also has no knowledge
+            // of which pieces require prefixing, so we need to handle that here too.
+            $prefixedkey = $this->internalprefix.$args[1];
+            $args = [$prefixedkey, 'unlink', $prefixedkey];
         }
 
         if ($this->retrylimit < 0) {
@@ -520,7 +534,7 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
         } else if ($this->config['purgemode'] == self::PURGEMODE_UNLINK) {
             // This is not supported before Redis4.
             foreach ($hashes as $hash) {
-                $result = ($this->command('unlink', $hash) !== false) && $result;
+                $result = ($this->command_raw('unlink', $hash) !== false) && $result;
             }
             return $result;
         }
@@ -742,7 +756,9 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
         }
         return [
             'server' => CACHESTORE_REDISCLUSTER_TEST_SERVER,
+            'persist' => true,
             'prefix' => $DB->get_prefix(),
+            'purgemode' => self::PURGEMODE_UNLINK,
         ];
     }
 
@@ -765,7 +781,9 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
 
         // If the configuration is not defined correctly, return only the configuration know about.
         $config = [
+            'persist' => true,
             'prefix' => $DB->get_prefix(),
+            'purgemode' => self::PURGEMODE_UNLINK,
         ];
         if (!defined('CACHESTORE_REDISCLUSTER_TEST_SERVER')) {
             return $config;
