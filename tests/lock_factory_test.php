@@ -51,10 +51,9 @@ class cachestore_rediscluster_lock_factory_testcase extends advanced_testcase {
         if (!PHPUNIT_LONGTEST) {
             return;
         }
-        $definition = cache_definition::load_adhoc(cache_store::MODE_APPLICATION, 'cachestore_rediscluster', 'phpunit_test');
-        $store      = cachestore_rediscluster::initialise_unit_test_instance($definition);
+        $instance = new cachestore_rediscluster('RedisCluster Test', cachestore_rediscluster::unit_test_configuration());
 
-        if (!$store) {
+        if (!$instance->is_ready()) {
             // We're not configured to use RedisCluster. Skip.
             $this->markTestSkipped();
         }

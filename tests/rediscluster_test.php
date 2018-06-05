@@ -63,15 +63,14 @@ class cachestore_rediscluster_test extends cachestore_tests {
     protected function create_cachestore_rediscluster() {
         /** @var cache_definition $definition */
         $definition = cache_definition::load_adhoc(cache_store::MODE_APPLICATION, 'cachestore_rediscluster', 'phpunit_test');
-        $store      = cachestore_rediscluster::initialise_unit_test_instance($definition);
+        $instance = new cachestore_rediscluster('RedisCluster Test', cachestore_rediscluster::unit_test_configuration());
 
-        $this->store = $store;
-
-        if (!$store) {
+        if (!$instance->is_ready()) {
+            // We're not configured to use RedisCluster. Skip.
             $this->markTestSkipped();
         }
-
-        return $store;
+        $instance->initialise($definition);
+        return $this->store = $instance;
     }
 
     public function test_has() {

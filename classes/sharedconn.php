@@ -58,13 +58,6 @@ class sharedconn {
         $siteident = md5($CFG->dbhost.(empty($CFG->dbport) ? '' : $CFG->dbport).$CFG->dbname.$CFG->prefix);
 
         $server = empty($CFG->redis) ? null : $CFG->redis;
-        if (PHPUNIT_TEST) {
-            // The name is important because it is part of the prefix.
-            $server = CACHESTORE_REDISCLUSTER_TEST_SERVER;
-        }
-        if (empty($server)) {
-            return;
-        }
 
         $this->config = [
             'server' => $server,
@@ -73,6 +66,10 @@ class sharedconn {
             'timeout' => !empty($CFG->redis_timeout) ? $CFG->redis_timeout : 1.0,
             'persist' => !empty($CFG->redis_persist) ? $CFG->redis_persist : false,
         ];
+
+        if (PHPUNIT_TEST) {
+            $this->config = \cachestore_rediscluster::unit_test_configuration();
+        }
 
         $this->isready = self::$connection !== null;
         if (!$this->isready) {

@@ -151,7 +151,7 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
         if (PHPUNIT_TEST && empty($configuration)) {
             // The name is important because it is part of the prefix.
             $this->name    = self::get_testing_name();
-            $configuration = self::get_testing_configuration();
+            $configuration = self::unit_test_configuration();
         } else if (empty($configuration['server'])) {
             return;
         }
@@ -727,45 +727,8 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
         $editform->set_data($data);
     }
 
-    public static function initialise_unit_test_instance(cache_definition $definition) {
-        if (!self::are_requirements_met()) {
-            return false;
-        }
-        if (!self::ready_to_be_used_for_testing()) {
-            return false;
-        }
-
-        $store = new cachestore_rediscluster(self::get_testing_name(), self::get_testing_configuration());
-        if (!$store->is_ready()) {
-            return false;
-        }
-        $store->initialise($definition);
-
-        return $store;
-    }
-
     public static function ready_to_be_used_for_testing() {
         return defined('CACHESTORE_REDISCLUSTER_TEST_SERVER');
-    }
-
-    /**
-     * Return configuration to use when unit testing.
-     *
-     * @return array
-     * @throws coding_exception
-     */
-    public static function get_testing_configuration() {
-        global $DB;
-
-        if (!self::are_requirements_met()) {
-            throw new coding_exception('RedisCluster cache store not setup for testing');
-        }
-        return [
-            'server' => CACHESTORE_REDISCLUSTER_TEST_SERVER,
-            'persist' => true,
-            'prefix' => $DB->get_prefix(),
-            'purgemode' => self::PURGEMODE_UNLINK,
-        ];
     }
 
     /**

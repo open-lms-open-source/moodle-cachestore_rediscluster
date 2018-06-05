@@ -42,11 +42,7 @@ class cachestore_rediscluster_session_testcase extends advanced_testcase {
 
         require_once("{$CFG->dirroot}/cache/stores/rediscluster/lib.php");
 
-        if (!\cachestore_rediscluster::are_requirements_met()) {
-            $this->markTestSkipped();
-        }
-
-        if (!defined('CACHESTORE_REDISCLUSTER_TEST_SERVER')) {
+        if (!\cachestore_rediscluster::are_requirements_met() || !\cachestore_rediscluster::ready_to_be_used_for_testing()) {
             $this->markTestSkipped();
         }
 
