@@ -26,6 +26,7 @@ defined('MOODLE_INTERNAL') || die();
 
 require_once(__DIR__.'/../../../tests/fixtures/stores.php');
 require_once(__DIR__.'/../lib.php');
+require_once(__DIR__.'/fixtures/testable_ratelimiter.php');
 
 
 /**
@@ -53,7 +54,7 @@ class cachestore_rediscluster_ratelimiter_testcase extends advanced_testcase {
 
     protected function tearDown() {
         $keys = ['abc', 'def', 'ghi'];
-        \cachestore_rediscluster\ratelimiter::get_instance()->testing_cleanup($keys);
+        testable_ratelimiter::get_instance()->testing_cleanup($keys);
     }
 
     /**
@@ -64,7 +65,7 @@ class cachestore_rediscluster_ratelimiter_testcase extends advanced_testcase {
         $limit = 10;
         $minimum = 2;
 
-        $limiter = \cachestore_rediscluster\ratelimiter::get_instance();
+        $limiter = testable_ratelimiter::get_instance();
 
         $limiter->track('abc', 11); // Avg = 11.
         // Only one sample, a minimum of 2 samples means this should not yet be limited.
@@ -84,7 +85,7 @@ class cachestore_rediscluster_ratelimiter_testcase extends advanced_testcase {
         $window = 120;
         $limit = 3;
 
-        $limiter = \cachestore_rediscluster\ratelimiter::get_instance();
+        $limiter = testable_ratelimiter::get_instance();
 
         $limiter->track('def', 1); // Count = 1.
         $limiter->track('def', 1);// Count = 2.
@@ -105,7 +106,7 @@ class cachestore_rediscluster_ratelimiter_testcase extends advanced_testcase {
         $window = 1;
         $limit = 3;
 
-        $limiter = \cachestore_rediscluster\ratelimiter::get_instance();
+        $limiter = testable_ratelimiter::get_instance();
 
         $limiter->track('ghi', 1);
         $limiter->track('ghi', 1);
