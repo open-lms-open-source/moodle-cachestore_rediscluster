@@ -158,7 +158,7 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
 
         // Default values.
         $this->config = [
-            'failover' => RedisCluster::FAILOVER_NONE,
+            'failover' => RedisCluster::FAILOVER_DISTRIBUTE,
             'persist' => false,
             'prefix' => '',
             'purgemode' => self::PURGEMODE_LAZY,
