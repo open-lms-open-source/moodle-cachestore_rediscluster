@@ -35,7 +35,7 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
     const PURGEMODE_UNLINK = 'unlink'; // Redis4.0+ only.
     const PURGEMODE_DEL = 'del';
 
-    const SHARD_SIZE = 8;
+    const DEFAULT_SHARD_SIZE = 8;
 
     /**
      * Name of this store.
@@ -145,6 +145,7 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
      * @param array $configuration
      */
     public function __construct($name, array $configuration = array()) {
+        global $CFG;
         $this->name = $name;
 
         // During unit test purge, it goes off process and no config is passed.
@@ -167,6 +168,7 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
             'server' => null,
             'serversecondary' => null,
             'session' => false,
+            'shardsize' => !empty($CFG->redis_shardsize) ? $CFG->redis_shardsize : self::DEFAULT_SHARD_SIZE,
             'timeout' => 3.0,
         ];
 
@@ -451,7 +453,7 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
     protected function hash_shard($key) {
         $hash = $this->hash;
         if ($this->sharded) {
-            $shard = crc32($key) % self::SHARD_SIZE;
+            $shard = crc32($key) % $this->config['shardsize'];
             $hash = "{$this->hash}-{$shard}";
         }
         return $hash;
@@ -520,7 +522,7 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
     public function purge() {
         $hashes = [$this->hash];
         if ($this->sharded) {
-            for ($shard = 0; $shard < self::SHARD_SIZE; $shard++) {
+            for ($shard = 0; $shard < $this->config['shardsize']; $shard++) {
                 $hashes[] = "{$this->hash}-{$shard}";
             }
         }
