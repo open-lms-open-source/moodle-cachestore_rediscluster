@@ -374,12 +374,16 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
 
         $this->redis->setOption(Redis::OPT_PREFIX, '');
         $this->redis->setOption(Redis::OPT_SERIALIZER, Redis::SERIALIZER_NONE);
+        // The phpredis library treats raw commands like readonly ones and distributes
+        // them to slaves if configured to do so. So for the life of this command, turn off failover/distribution.
+        $this->redis->setOption(RedisCluster::OPT_SLAVE_FAILOVER, RedisCluster::FAILOVER_NONE);
 
         $result = call_user_func_array([$this, 'command'], $args);
 
         // Return the redis client to the previous state.
         $this->redis->setOption(Redis::OPT_PREFIX, $prefix);
         $this->redis->setOption(Redis::OPT_SERIALIZER, $this->config['serializer']);
+        $this->redis->setOption(RedisCluster::OPT_SLAVE_FAILOVER, $this->config['failover']);
         return $result;
     }
 
