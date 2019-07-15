@@ -55,7 +55,7 @@ class sharedconn {
     protected function __construct() {
         global $CFG;
 
-        $siteident = md5($CFG->dbhost.(empty($CFG->dbport) ? '' : $CFG->dbport).$CFG->dbname.$CFG->prefix);
+        $siteident = !empty($CFG->forcedsiteident) ? $CFG->forcedsiteident : "{$CFG->dbname}:{$CFG->prefix}";
 
         $server = empty($CFG->redis) ? null : $CFG->redis;
 
