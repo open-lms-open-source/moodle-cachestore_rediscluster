@@ -51,6 +51,9 @@ class session extends \core\session\handler {
      */
     protected $acquiretimeout = 120;
 
+    /** @var int $lockretry how long to wait between session lock attempts in ms */
+    protected $lockretry = 100;
+
     /**
      * How long to wait in seconds before expiring the lock automatically so
      * that other requests may continue execution.
@@ -143,6 +146,10 @@ class session extends \core\session\handler {
 
         if (isset($CFG->session_rediscluster['acquire_lock_timeout'])) {
             $this->acquiretimeout = (int)$CFG->session_rediscluster['acquire_lock_timeout'];
+        }
+
+        if (isset($CFG->session_redis_acquire_lock_retry)) {
+            $this->lockretry = (int)$CFG->session_redis_acquire_lock_retry;
         }
 
         if (isset($CFG->session_rediscluster['max_waiters'])) {
@@ -379,6 +386,7 @@ class session extends \core\session\handler {
          * on the session for the entire time it is open.  If another AJAX call, or page is using
          * the session then we just wait until it finishes before we can open the session.
          */
+        $count = 1;
         while (!$haslock) {
             $expiry = time() + $this->lockexpire;
             $haslock = $this->get_lock($lockkey);
@@ -387,7 +395,20 @@ class session extends \core\session\handler {
                 break;
             }
 
-            usleep(rand(100000, 1000000));
+            // We want a random delay to stagger the polling load. Ideally
+            // this delay should be a fraction of the average response
+            // time. If it is too small we will poll too much and if it is
+            // too large we will waste time waiting for no reason. 100ms is
+            // the default starting point.
+            $delay = rand($this->lockretry, $this->lockretry * 1.1);
+
+            // If we don't get a lock within 5 seconds then there must be a
+            // very long lived process holding the lock so throttle back to
+            // just polling roughly once a second.
+            if (time() > $startlocktime + 5) {
+                $delay = min(rand(1000, 1100), $delay);
+            }
+
             if (time() > $startlocktime + $this->acquiretimeout) {
                 // This is a fatal error, better inform users.
                 // It should not happen very often - all pages that need long time to execute
@@ -396,6 +417,8 @@ class session extends \core\session\handler {
                         '. It is likely another page has a long session lock, or the session lock was never released.');
                 break;
             }
+
+            usleep($delay * 1000);
         }
 
         $this->decrement($waitkey);
