@@ -257,9 +257,11 @@ class session extends \core\session\handler {
      */
     public function handler_read($id) {
         try {
-            $this->lock_session($id);
+            if ($this->requires_write_lock()) {
+                $this->lock_session($id);
+            }
             $sessiondata = $this->connection->command('get', $id);
-            if ($sessiondata === false) {
+            if ($sessiondata === false && $this->requires_write_lock()) {
                 $this->unlock_session($id);
                 return '';
             }
