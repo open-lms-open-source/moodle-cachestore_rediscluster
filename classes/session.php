@@ -75,6 +75,9 @@ class session extends \core\session\handler {
      */
     protected $tracklockhost = false;
 
+    /** @var string $lasthash hash of the session data content */
+    protected $lasthash = null;
+
     /**
      * The RedisCluster cachestore object.
      *
@@ -233,6 +236,7 @@ class session extends \core\session\handler {
      * @return bool true on success.  false on unable to unlock sessions.
      */
     public function handler_close() {
+        $this->lasthash = null;
         try {
             foreach ($this->locks as $id => $expirytime) {
                 if ($expirytime > time()) {
@@ -263,6 +267,7 @@ class session extends \core\session\handler {
             $sessiondata = $this->connection->command('get', $id);
             if ($sessiondata === false && $this->requires_write_lock()) {
                 $this->unlock_session($id);
+                $this->lasthash = sha1('');
                 return '';
             }
             $this->connection->command('expire', $id, $this->timeout);
@@ -270,6 +275,7 @@ class session extends \core\session\handler {
             error_log('Failed talking to redis: '.$e->getMessage());
             throw $e;
         }
+        $this->lasthash = sha1(base64_encode($sessiondata));
         return $sessiondata;
     }
 
@@ -288,6 +294,13 @@ class session extends \core\session\handler {
             // The session has already been closed, don't attempt another write.
             error_log('Tried to write session: '.$id.' before open or after close.');
             return false;
+        }
+
+        $hash = sha1(base64_encode($data));
+
+        // If the content has not changed don't bother writing.
+        if ($hash === $this->lasthash) {
+            return true;
         }
 
         // We do not do locking here because memcached doesn't.  Also
@@ -310,6 +323,7 @@ class session extends \core\session\handler {
      * @return bool true if the session was deleted, false otherwise.
      */
     public function handler_destroy($id) {
+        $this->lasthash = null;
         try {
             $this->connection->command('del', $id);
             $this->unlock_session($id);
