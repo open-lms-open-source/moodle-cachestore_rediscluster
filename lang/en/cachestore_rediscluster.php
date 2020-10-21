@@ -24,6 +24,13 @@
 
 defined('MOODLE_INTERNAL') || die();
 
+$string['compression'] = 'Compression';
+$string['compression_help'] = 'Which compression algorithm to use for storing data in redis.';
+$string['compressionnone'] = 'None';
+$string['compressionlz4'] = 'LZ4';
+$string['compressionlzf'] = 'LZF';
+$string['compressionzstd'] = 'ZSTD';
+
 $string['failover'] = 'Failover';
 $string['failover_help'] = 'How phpredis should distribute reads between master and slave nodes.
 
@@ -64,12 +71,10 @@ $string['serializer'] = 'Serializer';
 $string['serializer_help'] = 'Which serializer should be used to serializer the data going in and our of the redis cluster.
 
 * igbinary: Use the igbinary extension (note: requires igbinary to be installed!)
-* none: Don\'t serialize data.
 * php: Use php\'s built in serializer.
 
 **Warning**: Don\'t change this value on a live site. You\'ll need to purge the cache prior to being able to use it if it already had data in it.';
 $string['serializerigbinary'] = 'igbinary';
-$string['serializernone'] = 'None';
 $string['serializerphp'] = 'PHP';
 
 $string['server'] = 'Server';

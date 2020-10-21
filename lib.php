@@ -159,6 +159,7 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
 
         // Default values.
         $this->config = [
+            'compression' => Redis::COMPRESSION_NONE,
             'failover' => RedisCluster::FAILOVER_DISTRIBUTE,
             'persist' => false,
             'prefix' => '',
@@ -225,6 +226,7 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
         $this->isready = false;
         $this->internalprefix = $this->config['session'] ? $this->config['prefix'] : $this->config['prefix'].$this->name.'-';
         if ($redis = new RedisCluster(null, $servers, $this->config['timeout'], $this->config['readtimeout'], $this->config['persist'])) {
+            $redis->setOption(Redis::OPT_COMPRESSION, $this->config['compression']);
             $redis->setOption(Redis::OPT_SERIALIZER, $this->config['serializer']);
             $redis->setOption(Redis::OPT_PREFIX, $this->internalprefix);
             $redis->setOption(RedisCluster::OPT_SLAVE_FAILOVER, $this->config['failover']);
@@ -374,6 +376,7 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
         $args = func_get_args();
         $prefix = $this->redis->getOption(Redis::OPT_PREFIX);
 
+        $this->redis->setOption(Redis::OPT_COMPRESSION, Redis::COMPRESSION_NONE);
         $this->redis->setOption(Redis::OPT_PREFIX, '');
         $this->redis->setOption(Redis::OPT_SERIALIZER, Redis::SERIALIZER_NONE);
         // The phpredis library treats raw commands like readonly ones and distributes
@@ -383,6 +386,7 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
         $result = call_user_func_array([$this, 'command'], $args);
 
         // Return the redis client to the previous state.
+        $this->redis->setOption(Redis::OPT_COMPRESSION, $this->config['compression']);
         $this->redis->setOption(Redis::OPT_PREFIX, $prefix);
         $this->redis->setOption(Redis::OPT_SERIALIZER, $this->config['serializer']);
         $this->redis->setOption(RedisCluster::OPT_SLAVE_FAILOVER, $this->config['failover']);
@@ -691,6 +695,7 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
      */
     public static function config_get_configuration_array($data) {
         return [
+            'compression' => $data->compression,
             'failover' => $data->failover,
             'persist' => !empty($data->persist),
             'prefix' => $data->prefix,
@@ -712,6 +717,7 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
      */
     public static function config_set_edit_form_data(moodleform $editform, array $config) {
         $data = [
+            'compression' => Redis::COMPRESSION_NONE,
             'failover' => RedisCluster::FAILOVER_NONE,
             'persist' => false,
             'prefix' => '',

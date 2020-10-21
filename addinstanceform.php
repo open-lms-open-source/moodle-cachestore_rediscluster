@@ -91,12 +91,30 @@ class cachestore_rediscluster_addinstance_form extends cachestore_addinstance_fo
         $form->setDefault('readtimeout', '3.0');
 
         $opts = [
-            Redis::SERIALIZER_NONE => get_string('serializernone', 'cachestore_rediscluster'),
             Redis::SERIALIZER_PHP => get_string('serializerphp', 'cachestore_rediscluster'),
             Redis::SERIALIZER_IGBINARY => get_string('serializerigbinary', 'cachestore_rediscluster'),
         ];
         $form->addElement('select', 'serializer', get_string('serializer', 'cachestore_rediscluster'), $opts);
         $form->addHelpButton('serializer', 'serializer', 'cachestore_rediscluster');
         $form->setDefault('serializer', Redis::SERIALIZER_PHP);
+
+        $opts = [
+            Redis::COMPRESSION_NONE => get_string('compressionnone', 'cachestore_rediscluster'),
+        ];
+
+        if (defined('Redis::COMPRESSION_LZ4')) {
+            $opts[Redis::COMPRESSION_LZ4] = get_string('compressionlz4', 'cachestore_rediscluster');
+        }
+
+        if (defined('Redis::COMPRESSION_LZF')) {
+            $opts[Redis::COMPRESSION_LZF] = get_string('compressionlzf', 'cachestore_rediscluster');
+        }
+        if (defined('Redis::COMPRESSION_ZSTD')) {
+            $opts[Redis::COMPRESSION_ZSTD] = get_string('compressionzstd', 'cachestore_rediscluster');
+        }
+        $form->addElement('select', 'compression', get_string('compression', 'cachestore_rediscluster'), $opts);
+        $form->addHelpButton('compression', 'compression', 'cachestore_rediscluster');
+        $form->setDefault('compression', Redis::COMPRESSION_NONE);
+
     }
 }
