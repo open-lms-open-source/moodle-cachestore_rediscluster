@@ -49,7 +49,7 @@ class cachestore_rediscluster_test extends cachestore_tests {
         return 'cachestore_rediscluster';
     }
 
-    protected function tearDown() {
+    protected function tearDown(): void {
         parent::tearDown();
 
         if ($this->store instanceof cachestore_rediscluster) {

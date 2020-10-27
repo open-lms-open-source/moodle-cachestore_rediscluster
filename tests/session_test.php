@@ -35,7 +35,7 @@ class cachestore_rediscluster_session_testcase extends advanced_testcase {
 
     protected $sesshandler = null;
 
-    public function setUp() {
+    public function setUp(): void {
         global $CFG;
 
         $this->resetAfterTest();
@@ -64,7 +64,7 @@ class cachestore_rediscluster_session_testcase extends advanced_testcase {
         }
     }
 
-    public function tearDown() {
+    public function tearDown(): void {
         if ($this->sesshandler) {
             $this->sesshandler->cleanup_test_instance();
         }

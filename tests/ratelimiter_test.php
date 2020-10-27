@@ -41,7 +41,7 @@ class cachestore_rediscluster_ratelimiter_testcase extends advanced_testcase {
     /**
      * Some lock types will store data in the database.
      */
-    protected function setUp() {
+    protected function setUp(): void {
         $this->resetAfterTest(true);
 
         $instance = new cachestore_rediscluster('RedisCluster Test', cachestore_rediscluster::unit_test_configuration());
@@ -52,7 +52,7 @@ class cachestore_rediscluster_ratelimiter_testcase extends advanced_testcase {
         }
     }
 
-    protected function tearDown() {
+    protected function tearDown(): void {
         $keys = ['abc', 'def', 'ghi'];
         testable_ratelimiter::get_instance()->testing_cleanup($keys);
     }
