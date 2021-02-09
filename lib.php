@@ -31,10 +31,6 @@ defined('MOODLE_INTERNAL') || die();
  */
 class cachestore_rediscluster extends cache_store implements cache_is_key_aware, cache_is_lockable, cache_is_configurable {
 
-    const PURGEMODE_LAZY = 'lazy';
-    const PURGEMODE_UNLINK = 'unlink'; // Redis4.0+ only.
-    const PURGEMODE_DEL = 'del';
-
     const DEFAULT_SHARD_SIZE = 8;
 
     /**
@@ -105,7 +101,8 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
      * @return bool
      */
     public static function are_requirements_met() {
-        return class_exists('RedisCluster');
+        // The existance of the unlink method means we're running at least phpredis 4.0.
+        return class_exists('RedisCluster') && method_exists('RedisCluster', 'unlink');
     }
 
     /**
@@ -163,7 +160,6 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
             'failover' => RedisCluster::FAILOVER_DISTRIBUTE,
             'persist' => false,
             'prefix' => '',
-            'purgemode' => self::PURGEMODE_LAZY,
             'readtimeout' => 3.0,
             'serializer' => Redis::SERIALIZER_IGBINARY,
             'server' => null,
@@ -314,19 +310,7 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
     public function command() {
         $args = func_get_args();
 
-        // phpredis only just added unlink as a native function in Jan 2018. So
-        // we need to use rawCommand to do the job.
-        // see: https://github.com/phpredis/phpredis/issues/1299
-        $function = 'rawCommand';
-        if ($args[0] != 'unlink') {
-            $function = array_shift($args);
-        } else {
-            // RedisCluster requires the key as the first argument so it knows
-            // where to send the rawCommand. Being raw, it also has no knowledge
-            // of which pieces require prefixing, so we need to handle that here too.
-            $prefixedkey = $this->internalprefix.$args[1];
-            $args = [$prefixedkey, 'unlink', $prefixedkey];
-        }
+        $function = array_shift($args);
 
         if ($this->retrylimit < 0) {
             $this->retrylimit = 0;
@@ -532,31 +516,8 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
         }
 
         $result = true;
-        if ($this->config['purgemode'] == self::PURGEMODE_LAZY) {
-            // DEL is not fast if the hash has a lot of child elements.
-            // Rename the key instead, it can be cleaned up later.
-            $prefix = $this->redis->getOption(Redis::OPT_PREFIX);
-            $gcid = uniqid(mt_rand(), true);
-
-            // Since the originating key has a prefix in front of it, we need to
-            // include it inside the hash tag here for the hashslot calculation.
-            foreach ($hashes as $hash) {
-                $temp = "gc:tmp:{$gcid}:{{$prefix}{$hash}}";
-                $this->set_retry_limit(1);
-                $result = ($this->command('rename', $hash, $temp) !== false) && $result;
-                $this->command('sadd', 'gc:hash', $temp);
-            }
-            return $result;
-        } else if ($this->config['purgemode'] == self::PURGEMODE_UNLINK) {
-            // This is not supported before Redis4.
-            foreach ($hashes as $hash) {
-                $result = ($this->command_raw('unlink', $hash) !== false) && $result;
-            }
-            return $result;
-        }
-
         foreach ($hashes as $hash) {
-            $result = ($this->command('del', $hash) !== false) && $result;
+            $result = ($this->command('unlink', $hash) !== false) && $result;
         }
         return $result;
     }
@@ -699,7 +660,6 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
             'failover' => $data->failover,
             'persist' => !empty($data->persist),
             'prefix' => $data->prefix,
-            'purgemode' => $data->purgemode,
             'readtimeout' => $data->readtimeout,
             'serializer' => $data->serializer,
             'server' => $data->server,
@@ -721,7 +681,6 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
             'failover' => RedisCluster::FAILOVER_NONE,
             'persist' => false,
             'prefix' => '',
-            'purgemode' => self::PURGEMODE_LAZY,
             'readtimeout' => 3.0,
             'serializer' => Redis::SERIALIZER_IGBINARY,
             'server' => null,
@@ -764,7 +723,6 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
         $config = [
             'persist' => true,
             'prefix' => $DB->get_prefix(),
-            'purgemode' => self::PURGEMODE_UNLINK,
         ];
         if (!defined('CACHESTORE_REDISCLUSTER_TEST_SERVER')) {
             return $config;

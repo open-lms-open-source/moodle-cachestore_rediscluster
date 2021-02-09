@@ -71,15 +71,6 @@ class cachestore_rediscluster_addinstance_form extends cachestore_addinstance_fo
         $form->setDefault('persist', 0);
         $form->setType('persist', PARAM_BOOL);
 
-        $opts = [
-            cachestore_rediscluster::PURGEMODE_DEL => get_string('purgemodedel', 'cachestore_rediscluster'),
-            cachestore_rediscluster::PURGEMODE_LAZY => get_string('purgemodelazy', 'cachestore_rediscluster'),
-            cachestore_rediscluster::PURGEMODE_UNLINK => get_string('purgemodeunlink', 'cachestore_rediscluster'),
-        ];
-        $form->addElement('select', 'purgemode', get_string('purgemode', 'cachestore_rediscluster'), $opts);
-        $form->addHelpButton('purgemode', 'purgemode', 'cachestore_rediscluster');
-        $form->setDefault('purgemode', cachestore_rediscluster::PURGEMODE_DEL);
-
         $form->addElement('text', 'timeout', get_string('timeout', 'cachestore_rediscluster'));
         $form->addHelpButton('timeout', 'timeout', 'cachestore_rediscluster');
         $form->setType('timeout', PARAM_FLOAT);

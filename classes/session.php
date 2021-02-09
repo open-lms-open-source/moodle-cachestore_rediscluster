@@ -132,7 +132,6 @@ class session extends \core\session\handler {
             'failover' => \RedisCluster::FAILOVER_NONE,
             'persist' => false,
             'prefix' => '',
-            'purgemode' => \cachestore_rediscluster::PURGEMODE_LAZY,
             'readtimeout' => 3.0,
             'serializer' => \Redis::SERIALIZER_PHP,
             'server' => null,

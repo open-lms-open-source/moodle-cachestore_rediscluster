@@ -54,16 +54,6 @@ If you only have one Moodle instance using this cluster, you can leave this valu
 $string['prefixinvalid'] = 'Invalid prefix. You can only use a-z A-Z 0-9-_.';
 $string['privacy:metadata'] = 'The RedisCluster cache cachestore plugin stores data briefly as part of its caching functionality but this data is regularly cleared.';
 
-$string['purgemode'] = 'Purge mode';
-$string['purgemode_help'] = 'Which behaviour the store should use to purge old data.
-
-* delete: DEL commands are sent to the hash containing the cache data. As DEL is a blocking command in redis, this can cause Moodle to wait longer for responses when purging the entire cache set or particularly large hashes.
-* lazy: Rather than issue delete commands, this uses RENAME to move the old keys out of the way. The downside of this is that there will be a growing set of "expired" hashes you need to cleanup later - or leave for redis to clear out if you have allkeys-lru set for your redis cluster.
-* unlink: As of Redis 4, a new command called UNLINK was introduced which immediately makes the data inaccessible to clients and clears the data from memory in the background in a non-blocking fashion. Only select this option if your cluster is running Redis 4!';
-$string['purgemodedel'] = 'Delete';
-$string['purgemodelazy'] = 'Lazy';
-$string['purgemodeunlink'] = 'Unlink';
-
 $string['readtimeout'] = 'Read timeout';
 $string['readtimeout_help'] = 'The amount of time phpredis will wait for a result from the cluster.';
 
