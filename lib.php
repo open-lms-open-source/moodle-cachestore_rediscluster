@@ -159,6 +159,7 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
             'compression' => Redis::COMPRESSION_NONE,
             'failover' => RedisCluster::FAILOVER_DISTRIBUTE,
             'persist' => false,
+            'preferrednodes' => null,
             'prefix' => '',
             'readtimeout' => 3.0,
             'serializer' => Redis::SERIALIZER_IGBINARY,
@@ -226,6 +227,10 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
             $redis->setOption(Redis::OPT_SERIALIZER, $this->config['serializer']);
             $redis->setOption(Redis::OPT_PREFIX, $this->internalprefix);
             $redis->setOption(RedisCluster::OPT_SLAVE_FAILOVER, $this->config['failover']);
+            if (defined('RedisCluster::FAILOVER_PREFERRED') && $this->config['failover'] == RedisCluster::FAILOVER_PREFERRED) {
+                $nodes = explode(',', $this->config['preferrednodes']);
+                $redis->setOption(RedisCluster::OPT_PREFERRED_NODES, $nodes);
+            }
             $this->isready = true;
         }
         return $redis;

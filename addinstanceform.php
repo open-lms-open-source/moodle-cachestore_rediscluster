@@ -62,9 +62,22 @@ class cachestore_rediscluster_addinstance_form extends cachestore_addinstance_fo
             RedisCluster::FAILOVER_ERROR => get_string('failovererror', 'cachestore_rediscluster'),
             RedisCluster::FAILOVER_DISTRIBUTE => get_string('failoverdistribute', 'cachestore_rediscluster'),
         ];
+        // Experimental setting, only add it if its available.
+        // https://github.com/phpredis/phpredis/pull/1896
+        if (defined('RedisCluster::FAILOVER_PREFERRED')) {
+            $opts[RedisCluster::FAILOVER_PREFERRED] = get_string('failoverpreferred', 'cachestore_rediscluster');
+        }
         $form->addElement('select', 'failover', get_string('failover', 'cachestore_rediscluster'), $opts);
         $form->addHelpButton('failover', 'failover', 'cachestore_rediscluster');
         $form->setDefault('failover', RedisCluster::FAILOVER_NONE);
+
+        if (defined('RedisCluster::FAILOVER_PREFERRED')) {
+            $form->addElement('text', 'preferrednodes', get_string('preferrednodes', 'cachestore_rediscluster'));
+            $form->addHelpButton('preferrednodes', 'preferrednodes', 'cachestore_rediscluster');
+            $form->disabledIf('preferrednodes', 'failover', 'neq', RedisCluster::FAILOVER_PREFERRED);
+            $form->setType('preferrednodes', PARAM_TEXT);
+            $form->setDefault('preferrednodes', '');
+        }
 
         $form->addElement('checkbox', 'persist', get_string('persist', 'cachestore_rediscluster'));
         $form->addHelpButton('persist', 'persist', 'cachestore_rediscluster');

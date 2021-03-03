@@ -131,6 +131,7 @@ class session extends \core\session\handler {
         $this->config = [
             'failover' => \RedisCluster::FAILOVER_NONE,
             'persist' => false,
+            'preferrednodes' => null,
             'prefix' => '',
             'readtimeout' => 3.0,
             'serializer' => \Redis::SERIALIZER_PHP,

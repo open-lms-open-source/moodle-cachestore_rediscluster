@@ -41,12 +41,15 @@ $string['failover_help'] = 'How phpredis should distribute reads between master 
 $string['failoverdistribute'] = 'Distribute';
 $string['failovererror'] = 'Error';
 $string['failovernone'] = 'None';
+$string['failoverpreferred'] = 'Preferred nodes';
 
 $string['persist'] = 'Persistent connections';
 $string['persist_help'] = 'Whether persistent connections to the redis servers should be used.';
 
 $string['pluginname'] = 'RedisCluster';
 
+$string['preferrednodes'] = 'Preferred nodes';
+$string['preferrednodes_help'] = 'The addresse (server/port or ip/port) of one or more nodes that should be preferred for read operations. Separate the nodes with commas.';
 $string['prefix'] = 'Key prefix';
 $string['prefix_help'] = 'This prefix is used for all key names on the Redis servers.
 
