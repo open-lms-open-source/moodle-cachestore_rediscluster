@@ -111,6 +111,10 @@ class session extends \core\session\handler {
      * The maximum amount of threads a given session can have queued waiting for
      * the session lock.
      *
+     * Set this to -1 to allow unlimited waiters. Waiting requests will only
+     * stop waiting when they get the lock, or the acquiretimeout has expired
+     * for the request.
+     *
      * @var int
      */
     protected $maxwaiters = 10;
@@ -129,6 +133,7 @@ class session extends \core\session\handler {
         global $CFG;
 
         $this->config = [
+            'compression' => \Redis::COMPRESSION_NONE,
             'failover' => \RedisCluster::FAILOVER_NONE,
             'persist' => false,
             'preferrednodes' => null,
@@ -388,7 +393,7 @@ class session extends \core\session\handler {
         $waitpos = $this->increment($waitkey, $this->lockexpire);
         $this->waiting = true;
 
-        if ($waitpos > $this->maxwaiters) {
+        if ($this->maxwaiters >= 0 && $waitpos > $this->maxwaiters) {
             $this->decrement($waitkey);
             $this->waiting = false;
             $this->error('sessionwaiterr');
