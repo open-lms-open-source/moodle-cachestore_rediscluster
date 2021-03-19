@@ -505,7 +505,7 @@ class session extends \core\session\handler {
 
     protected function increment($k, $ttl) {
         // Ensure key is created with ttl before proceeding.
-        if (!$this->connection->command('exists', $k)) {
+        if (empty($this->connection->command('exists', $k))) {
             // We don't want to potentially lose the expiry, so do it in a transaction.
             $this->connection->command('multi');
             $this->connection->command('incr', $k);
@@ -538,7 +538,7 @@ class session extends \core\session\handler {
         }
 
         try {
-            return $this->connection->command('exists', $sid);
+            return !empty($this->connection->command('exists', $sid));
         } catch (\RedisException $e) {
             return false;
         }

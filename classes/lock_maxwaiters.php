@@ -280,7 +280,7 @@ class lock_maxwaiters extends sharedconn implements \core\lock\lock_factory {
      */
     protected function increment($k, $ttl) {
         // Ensure key is created with ttl before proceeding.
-        if (!self::$connection->command('exists', $k)) {
+        if (empty(self::$connection->command('exists', $k))) {
             // We don't want to potentially lose the expiry, so do it in a transaction.
             self::$connection->command('multi');
             self::$connection->command('incr', $k);

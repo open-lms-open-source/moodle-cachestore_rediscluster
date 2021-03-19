@@ -570,7 +570,7 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
      */
     public function has($key) {
         $hash = $this->hash_shard($key);
-        return $this->command('hExists', $hash, $key);
+        return !empty($this->command('hExists', $hash, $key));
     }
 
     /**
