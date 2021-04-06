@@ -18,7 +18,7 @@
  * Redis CacheCluster Store - English language strings
  *
  * @package   cachestore_rediscluster
- * @copyright 2013 Adam Durana
+ * @copyright Copyright (c) 2021 Open LMS (https://www.openlms.net)
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 

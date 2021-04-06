@@ -18,7 +18,7 @@
  * RedisCluster Cache Store - Main library
  *
  * @package   cachestore_rediscluster
- * @copyright 2017 Blackboard Inc. (http://www.blackboard.com)
+ * @copyright Copyright (c) 2021 Open LMS (https://www.openlms.net)
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -29,7 +29,8 @@ defined('MOODLE_INTERNAL') || die();
  *
  * Forked from the cachestore_redis plugin.
  */
-class cachestore_rediscluster extends cache_store implements cache_is_key_aware, cache_is_lockable, cache_is_configurable {
+class cachestore_rediscluster extends cache_store implements cache_is_key_aware, cache_is_lockable,
+    cache_is_configurable, cache_is_searchable {
 
     const DEFAULT_SHARD_SIZE = 8;
 
@@ -112,7 +113,7 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
      * @return bool
      */
     public static function is_supported_mode($mode) {
-        return ($mode === self::MODE_APPLICATION);
+        return ($mode === self::MODE_APPLICATION || $mode === self::MODE_SESSION);
     }
 
     /**
@@ -122,7 +123,7 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
      * @return int
      */
     public static function get_supported_features(array $configuration = array()) {
-        return self::SUPPORTS_DATA_GUARANTEE + self::DEREFERENCES_OBJECTS;
+        return self::SUPPORTS_DATA_GUARANTEE + self::DEREFERENCES_OBJECTS + self::IS_SEARCHABLE;
     }
 
     /**
@@ -132,7 +133,7 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
      * @return int
      */
     public static function get_supported_modes(array $configuration = array()) {
-        return self::MODE_APPLICATION;
+        return self::MODE_APPLICATION + self::MODE_SESSION;
     }
 
     /**
@@ -194,7 +195,8 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
                 $this->fatal_error();
             }
             $subsys = $this->config['session'] ? 'SESSION' : 'MUC';
-            trigger_error($subsys.': Primary redis seed list failed, trying with fallback seed list ('.$e->getMessage().')', E_USER_WARNING);
+            trigger_error($subsys.': Primary redis seed list failed, trying with fallback seed list ('.$e->getMessage().')',
+                E_USER_WARNING);
             try {
                 $this->redis = $this->new_rediscluster(false);
             } catch (Exception $e) {
@@ -222,7 +224,8 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
 
         $this->isready = false;
         $this->internalprefix = $this->config['session'] ? $this->config['prefix'] : $this->config['prefix'].$this->name.'-';
-        if ($redis = new RedisCluster(null, $servers, $this->config['timeout'], $this->config['readtimeout'], $this->config['persist'])) {
+        if ($redis = new RedisCluster(null, $servers, $this->config['timeout'],
+            $this->config['readtimeout'], $this->config['persist'])) {
             $redis->setOption(Redis::OPT_COMPRESSION, $this->config['compression']);
             $redis->setOption(Redis::OPT_SERIALIZER, $this->config['serializer']);
             $redis->setOption(Redis::OPT_PREFIX, $this->internalprefix);
@@ -389,6 +392,32 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
      */
     public function is_ready() {
         return $this->isready;
+    }
+
+    /**
+     * Finds all of the keys being used by this cache store instance.
+     *
+     * @return array of all keys in the hash as a numbered array.
+     */
+    public function find_all() {
+        return $this->command('hkeys', $this->hash);
+    }
+
+    /**
+     * Finds all of the keys whose keys start with the given prefix.
+     *
+     * @param string $prefix
+     *
+     * @return array List of keys that match this prefix.
+     */
+    public function find_by_prefix($prefix) {
+        $return = [];
+        foreach ($this->find_all() as $key) {
+            if (strpos($key, $prefix) === 0) {
+                $return[] = $key;
+            }
+        }
+        return $return;
     }
 
     /**

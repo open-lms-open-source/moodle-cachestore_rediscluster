@@ -18,7 +18,7 @@
  * RedisCluster lock_factory
  *
  * @package    cachestore_rediscluster
- * @copyright  2017 Blackboard Inc
+ * @copyright  Copyright (c) 2021 Open LMS (https://www.openlms.net)
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -46,6 +46,7 @@ class lock_factory extends sharedconn implements \core\lock\lock_factory {
      * @return boolean - True if this lock type is available in this environment.
      */
     public function is_available() {
+        global $CFG;
         return PHPUNIT_TEST || !empty($CFG->redis);
     }
 
@@ -54,8 +55,6 @@ class lock_factory extends sharedconn implements \core\lock\lock_factory {
      * @param string $type - Used to prefix lock keys.
      */
     public function __construct($type) {
-        global $DB;
-
         $this->type = $type;
         parent::__construct();
 
@@ -150,7 +149,7 @@ class lock_factory extends sharedconn implements \core\lock\lock_factory {
      */
     public function auto_release() {
         // Called from the shutdown handler. Must release all open locks.
-        foreach ($this->openlocks as $key => $unused) {
+        foreach (array_keys($this->openlocks) as $key) {
             $lock = new lock($key, $this);
             $lock->release();
         }

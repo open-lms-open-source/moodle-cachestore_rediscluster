@@ -18,7 +18,7 @@
  * RedisCluster lock_maxwaiters
  *
  * @package    cachestore_rediscluster
- * @copyright  2018 Blackboard Inc
+ * @copyright  Copyright (c) 2021 Open LMS (https://www.openlms.net)
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -118,11 +118,11 @@ class lock_maxwaiters extends sharedconn implements \core\lock\lock_factory {
             return;
         }
 
-        if (!empty($CFG->$key['max_active']) && (int)$CFG->$key['max_active'] >= 0) {
-            $this->maxactive = (int)($CFG->$key['max_active']);
+        if (!empty(($CFG->$key)['max_active']) && (int)(($CFG->$key)['max_active']) >= 0) {
+            $this->maxactive = (int)(($CFG->$key)['max_active']);
         }
-        if (!empty($CFG->$key['max_waiters']) && (int)$CFG->$key['max_waiters'] >= 0) {
-            $this->maxwaiters = (int)($CFG->$key['max_waiters']);
+        if (!empty(($CFG->$key)['max_waiters']) && (int)(($CFG->$key)['max_waiters']) >= 0) {
+            $this->maxwaiters = (int)(($CFG->$key)['max_waiters']);
         }
     }
 
@@ -196,7 +196,7 @@ class lock_maxwaiters extends sharedconn implements \core\lock\lock_factory {
                 // This is a fatal error, better inform users.
                 // It should not happen very often - all pages that need long time to execute
                 // should close session immediately after access control checks.
-                error_log('Cannot obtain maxwaiters lock for key: '.$key.' within '.$timeout);
+                debugging('Cannot obtain maxwaiters lock for key: '.$key.' within '.$timeout, DEBUG_DEVELOPER);
                 break;
             }
         }
@@ -244,7 +244,7 @@ class lock_maxwaiters extends sharedconn implements \core\lock\lock_factory {
      */
     public function auto_release() {
         // Called from the shutdown handler. Must release all open locks.
-        foreach ($this->openlocks as $key => $unused) {
+        foreach (array_keys($this->openlocks) as $key) {
             $lock = new lock($key, $this);
             $lock->release();
         }

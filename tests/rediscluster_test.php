@@ -18,7 +18,7 @@
  * RedisCluster cache test.
  *
  * @package   cachestore_rediscluster
- * @copyright Copyright (c) 2015 Moodlerooms Inc. (http://www.moodlerooms.com)
+ * @copyright Copyright (c) 2021 Open LMS (https://www.openlms.net)
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -31,7 +31,7 @@ require_once(__DIR__.'/../lib.php');
  * RedisCluster cache test.
  *
  * @package   cachestore_rediscluster
- * @copyright Copyright (c) 2015 Moodlerooms Inc. (http://www.moodlerooms.com)
+ * @copyright Copyright (c) 2021 Open LMS (https://www.openlms.net)
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class cachestore_rediscluster_test extends cachestore_tests {

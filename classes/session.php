@@ -18,7 +18,7 @@
  * RedisCluster session handler
  *
  * @package    cachestore_rediscluster
- * @copyright  2017 Blackboard Inc
+ * @copyright  Copyright (c) 2021 Open LMS (https://www.openlms.net)
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -206,7 +206,7 @@ class session extends \core\session\handler {
 
         // The session handler requires a version of Redis extension that supports cluster (>= 2.2.8).
         if (!class_exists('RedisCluster')) {
-            throw new \moodle_exception('sessionhandlerproblem', 'error', '',null,
+            throw new \moodle_exception('sessionhandlerproblem', 'error', '', null,
                 'redis extension version must be at least 2.2.8');
         }
 
@@ -250,7 +250,7 @@ class session extends \core\session\handler {
                 unset($this->locks[$id]);
             }
         } catch (\RedisException $e) {
-            error_log('Failed talking to redis: '.$e->getMessage());
+            debugging('Failed talking to redis: '.$e->getMessage(), DEBUG_DEVELOPER);
             return false;
         }
 
@@ -277,7 +277,7 @@ class session extends \core\session\handler {
             }
             $this->connection->command('expire', $id, $this->timeout);
         } catch (\RedisException $e) {
-            error_log('Failed talking to redis: '.$e->getMessage());
+            debugging('Failed talking to redis: '.$e->getMessage(), DEBUG_DEVELOPER);
             throw $e;
         }
         $this->lasthash = sha1(base64_encode($sessiondata));
@@ -297,7 +297,7 @@ class session extends \core\session\handler {
         }
         if (is_null($this->connection)) {
             // The session has already been closed, don't attempt another write.
-            error_log('Tried to write session: '.$id.' before open or after close.');
+            debugging('Tried to write session: '.$id.' before open or after close.', DEBUG_DEVELOPER);
             return false;
         }
 
@@ -315,7 +315,7 @@ class session extends \core\session\handler {
         try {
             $this->connection->command('setex', $id, $this->timeout, $data);
         } catch (\RedisException $e) {
-            error_log('Failed talking to redis: '.$e->getMessage());
+            debugging('Failed talking to redis: '.$e->getMessage(), DEBUG_DEVELOPER);
             return false;
         }
         return true;
@@ -334,7 +334,7 @@ class session extends \core\session\handler {
             $this->unlock_session($id);
             $this->connection->command('del', $id.'.lock.waiting');
         } catch (\RedisException $e) {
-            error_log('Failed talking to redis: '.$e->getMessage());
+            debugging('Failed talking to redis: '.$e->getMessage(), DEBUG_DEVELOPER);
             return false;
         }
 
@@ -402,12 +402,9 @@ class session extends \core\session\handler {
         // Ensure on timeout or exception that we try to decrement the waiter count.
         \core_shutdown_manager::register_function([$this, 'release_waiter'], [$waitkey]);
 
-        /**
-         * To be able to ensure sessions don't write out of order we must obtain an exclusive lock
-         * on the session for the entire time it is open.  If another AJAX call, or page is using
-         * the session then we just wait until it finishes before we can open the session.
-         */
-        $count = 1;
+        // To be able to ensure sessions don't write out of order we must obtain an exclusive lock
+        // on the session for the entire time it is open.  If another AJAX call, or page is using
+        // the session then we just wait until it finishes before we can open the session.
         while (!$haslock) {
             $expiry = time() + $this->lockexpire;
             $haslock = $this->get_lock($lockkey);
@@ -434,8 +431,9 @@ class session extends \core\session\handler {
                 // This is a fatal error, better inform users.
                 // It should not happen very often - all pages that need long time to execute
                 // should close session immediately after access control checks.
-                error_log('Cannot obtain session lock for sid: '.$id.' within '.$this->acquiretimeout.
-                        '. It is likely another page has a long session lock, or the session lock was never released.');
+                debugging('Cannot obtain session lock for sid: '.$id.' within '.$this->acquiretimeout.
+                    '. It is likely another page has a long session lock, or the session lock was never released.',
+                    DEBUG_DEVELOPER);
                 break;
             }
 
@@ -453,10 +451,12 @@ class session extends \core\session\handler {
 
     public function release_waiter($waitkey) {
         if ($this->waiting) {
-            error_log("REDIS SESSION: Still waiting [key=$waitkey] during request shutdown!");
+            debugging("REDIS SESSION: Still waiting [key=$waitkey] during request shutdown!", DEBUG_DEVELOPER);
             try {
                 $this->decrement($waitkey);
-            } catch (\Exception $e) {}
+            } catch (\Exception $e) {
+                debugging("REDIS SESSION: Decrement failed for $waitkey", DEBUG_DEVELOPER);
+            }
         }
     }
 
@@ -509,7 +509,7 @@ class session extends \core\session\handler {
             // We don't want to potentially lose the expiry, so do it in a transaction.
             $this->connection->command('multi');
             $this->connection->command('incr', $k);
-            $this->connection->command('expire', $k, $this->lockexpire);
+            $this->connection->command('expire', $k, $ttl);
             $this->connection->command('exec');
             return 0;
         }

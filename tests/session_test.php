@@ -83,7 +83,7 @@ class cachestore_rediscluster_session_testcase extends advanced_testcase {
         $this->assertSame('DATA', $sess->handler_read('sess1'));
         $this->assertTrue($sess->handler_write('sess1', 'DATA-new'));
         $this->assertTrue($sess->handler_close());
-        $this->assertSessionNoLocks();
+        $this->assert_session_no_locks();
     }
 
     public function test_session_blocks_with_existing_session() {
@@ -115,7 +115,7 @@ class cachestore_rediscluster_session_testcase extends advanced_testcase {
         $this->assertTrue($sessblocked->handler_close());
         $this->assertTrue($sess->handler_write('sess1', 'DATA-new'));
         $this->assertTrue($sess->handler_close());
-        $this->assertSessionNoLocks();
+        $this->assert_session_no_locks();
     }
 
     public function test_session_is_destroyed_when_it_does_not_exist() {
@@ -123,7 +123,7 @@ class cachestore_rediscluster_session_testcase extends advanced_testcase {
         $sess->init();
         $this->assertTrue($sess->handler_open('Not used', 'Not used'));
         $this->assertTrue($sess->handler_destroy('sess-destroy'));
-        $this->assertSessionNoLocks();
+        $this->assert_session_no_locks();
     }
 
     public function test_session_is_destroyed_when_we_have_it_open() {
@@ -133,7 +133,7 @@ class cachestore_rediscluster_session_testcase extends advanced_testcase {
         $this->assertSame('', $sess->handler_read('sess-destroy'));
         $this->assertTrue($sess->handler_destroy('sess-destroy'));
         $this->assertTrue($sess->handler_close());
-        $this->assertSessionNoLocks();
+        $this->assert_session_no_locks();
     }
 
     public function test_multiple_sessions_do_not_interfere_with_each_other() {
@@ -170,12 +170,12 @@ class cachestore_rediscluster_session_testcase extends advanced_testcase {
         $this->assertEquals('DATAX', $sess1->handler_read('sess1'));
         $this->assertEquals('DATA2X', $sess2->handler_read('sess2'));
 
-        // Close both sessions
+        // Close both sessions.
         $this->assertTrue($sess1->handler_close());
         $this->assertTrue($sess2->handler_close());
 
         // Read the session again to ensure locking did what it should.
-        $this->assertSessionNoLocks();
+        $this->assert_session_no_locks();
     }
 
     public function test_multiple_sessions_work_with_a_single_instance() {
@@ -193,7 +193,7 @@ class cachestore_rediscluster_session_testcase extends advanced_testcase {
         $this->assertTrue($sess->handler_destroy('sess2'));
 
         $this->assertTrue($sess->handler_close());
-        $this->assertSessionNoLocks();
+        $this->assert_session_no_locks();
 
         $this->assertTrue($sess->handler_close());
     }
@@ -244,14 +244,14 @@ class cachestore_rediscluster_session_testcase extends advanced_testcase {
         $sess->kill_all_sessions();
 
         $this->assertEquals(3, $DB->count_records('sessions'), 'Moodle handles session database, plugin must not change it.');
-        $this->assertSessionNoLocks();
+        $this->assert_session_no_locks();
         $this->assertEmpty($this->sesshandler->test_find_keys('*'), 'There should be no session data left.');
     }
 
     /**
      * Assert that we don't have any session locks in Redis.
      */
-    protected function assertSessionNoLocks() {
+    protected function assert_session_no_locks() {
         $this->assertEmpty($this->sesshandler->test_find_keys('*.lock'));
     }
 }

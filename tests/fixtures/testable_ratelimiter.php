@@ -20,7 +20,7 @@
  *
  * @package    cachestore_rediscluster
  * @category   phpunit
- * @copyright  2018 Blackboard Inc.
+ * @copyright  Copyright (c) 2021 Open LMS (https://www.openlms.net)
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 

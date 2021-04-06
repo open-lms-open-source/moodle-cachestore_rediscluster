@@ -63,7 +63,7 @@ class cachestore_rediscluster_addinstance_form extends cachestore_addinstance_fo
             RedisCluster::FAILOVER_DISTRIBUTE => get_string('failoverdistribute', 'cachestore_rediscluster'),
         ];
         // Experimental setting, only add it if its available.
-        // https://github.com/phpredis/phpredis/pull/1896
+        // https://github.com/phpredis/phpredis/pull/1896 .
         if (defined('RedisCluster::FAILOVER_PREFERRED')) {
             $opts[RedisCluster::FAILOVER_PREFERRED] = get_string('failoverpreferred', 'cachestore_rediscluster');
         }
