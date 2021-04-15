@@ -270,8 +270,10 @@ class session extends \core\session\handler {
                 $this->lock_session($id);
             }
             $sessiondata = $this->connection->command('get', $id);
-            if ($sessiondata === false && $this->requires_write_lock()) {
-                $this->unlock_session($id);
+            if ($sessiondata === false) {
+                if ($this->requires_write_lock()) {
+                    $this->unlock_session($id);
+                }
                 $this->lasthash = sha1('');
                 return '';
             }
