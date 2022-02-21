@@ -60,9 +60,10 @@ class cachestore_rediscluster_test extends cachestore_tests {
     /**
      * @return cachestore_rediscluster
      */
-    protected function create_cachestore_rediscluster() {
+    protected function create_cachestore_rediscluster($sharded = false) {
         /** @var cache_definition $definition */
-        $definition = cache_definition::load_adhoc(cache_store::MODE_APPLICATION, 'cachestore_rediscluster', 'phpunit_test');
+        $cachename = $sharded ? 'phpunit_shard_test' : 'phpunit_test';
+        $definition = cache_definition::load_adhoc(cache_store::MODE_APPLICATION, 'cachestore_rediscluster', $cachename);
         $instance = new cachestore_rediscluster('RedisCluster Test', cachestore_rediscluster::unit_test_configuration());
 
         if (!$instance->is_ready()) {
@@ -198,5 +199,37 @@ class cachestore_rediscluster_test extends cachestore_tests {
         $this->assertTrue($store->has('flange'));
         $store->purge();
         $this->assertFalse($store->has('flange'));
+    }
+
+    public function test_find_all() {
+        $stores = [
+            $this->create_cachestore_rediscluster(false),
+            $this->create_cachestore_rediscluster(true),
+        ];
+        foreach ($stores as $store) {
+            $store = $this->create_cachestore_rediscluster();
+            for ($i = 0; $i < 20; $i++) {
+                $store->set("key{$i}", 1);
+            }
+            $this->assertCount(20, $store->find_all());
+        }
+    }
+
+    public function test_find_by_prefix() {
+        $stores = [
+            $this->create_cachestore_rediscluster(false),
+            $this->create_cachestore_rediscluster(true),
+        ];
+        foreach ($stores as $store) {
+            // Lets fill enough keys that SCAN is very likely to
+            // not return all data in one hit.
+            for ($i = 0; $i < 500; $i++) {
+                $store->set("abc{$i}", 1);
+                $store->set("ayz{$i}", 1);
+            }
+            $this->assertCount(500, $store->find_by_prefix('abc'));
+            $this->assertCount(500, $store->find_by_prefix('ayz'));
+            $this->assertCount(1000, $store->find_by_prefix('a'));
+        }
     }
 }

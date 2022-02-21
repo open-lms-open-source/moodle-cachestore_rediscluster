@@ -29,6 +29,7 @@ defined('MOODLE_INTERNAL') || die();
  *
  * @package   cachestore_rediscluster
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * @runClassInSeparateProcess
  */
 
 class cachestore_rediscluster_session_testcase extends advanced_testcase {
@@ -89,6 +90,7 @@ class cachestore_rediscluster_session_testcase extends advanced_testcase {
     public function test_session_blocks_with_existing_session() {
         $sess = new \cachestore_rediscluster\session();
         $sess->init();
+        $sess->set_requires_write_lock(true);
         $this->assertTrue($sess->handler_open('Not used', 'Not used'));
         $this->assertSame('', $sess->handler_read('sess1'));
         $this->assertTrue($sess->handler_write('sess1', 'DATA'));
@@ -100,16 +102,19 @@ class cachestore_rediscluster_session_testcase extends advanced_testcase {
 
         $sessblocked = new \cachestore_rediscluster\session();
         $sessblocked->init();
+        $sessblocked->set_requires_write_lock(true);
         $this->assertTrue($sessblocked->handler_open('Not used', 'Not used'));
 
         // Trap the error log and send it to stdOut so we can expect output at the right times.
         $errorlog = tempnam(sys_get_temp_dir(), "rediserrorlog");
         $this->iniSet('error_log', $errorlog);
+
         try {
             $sessblocked->handler_read('sess1');
             $this->fail('Session lock must fail to be obtained.');
         } catch (\Exception $e) {
-            $this->assertContains("sessionwaiterr", $e->getMessage());
+            $this->resetDebugging(); // Ignore the debug, we just care the exception was thrown.
+            $this->assertStringContainsString("sessionwaiterr", $e->getMessage());
         }
 
         $this->assertTrue($sessblocked->handler_close());
