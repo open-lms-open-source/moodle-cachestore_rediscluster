@@ -144,6 +144,11 @@ class session extends \core\session\handler {
             'serversecondary' => null,
             'session' => true,
             'timeout' => 3.0,
+            // How long we try to get a lock for before displaying
+            // the waiting room page. 0 = never show the page.
+            'waitingroom_start' => 0,
+            'waitingroom_backoffmax' => 8,
+            'waitingroom_statuscode' => '500 Internal Server Error',
         ];
 
         foreach (array_keys($this->config) as $key) {
@@ -382,6 +387,7 @@ class session extends \core\session\handler {
      */
     protected function lock_session($id) {
         $lockkey = $id.".lock";
+        $reqget = $_SERVER['REQUEST_METHOD'] === 'GET';
 
         if ($this->nolock) {
             return true;
@@ -429,6 +435,22 @@ class session extends \core\session\handler {
                 $delay = min(rand(1000, 1100), $delay);
             }
 
+            // If we're a GET request and we have waiting-room enabled,
+            // give the user a 'waiting-room' type page when they've waited
+            // long enough to trigger it.
+            if ($reqget && !AJAX_SCRIPT
+                && $this->config['waitingroom_start'] > 0
+                && (time() > $startlocktime + $this->config['waitingroom_start'])) {
+                $this->decrement($waitkey);
+                $this->waiting = false;
+                if (!empty($this->config['waitingroom_statuscode'])) {
+                    header("HTTP/1.1 {$this->config['waitingroom_statuscode']}");
+                }
+                header("X-OLMS-Reason: sessionbusy");
+                echo $this->render_waitingroom();
+                exit;
+            }
+
             if (time() > $startlocktime + $this->acquiretimeout) {
                 // This is a fatal error, better inform users.
                 // It should not happen very often - all pages that need long time to execute
@@ -449,6 +471,50 @@ class session extends \core\session\handler {
             $this->error('sessionwaiterr');
         }
         return true;
+    }
+
+    public function render_waitingroom() {
+        global $CFG, $SITE;
+
+        // Session backoff.
+        $sbo = optional_param('sbo', 1, PARAM_INT) * 2;
+
+        // Max time between refreshing of 8 seconds.
+        if ($sbo > $this->config['waitingroom_backoffmax']) {
+            $sbo = $this->config['waitingroom_backoffmax'];
+        }
+
+        $timestamp = date('Y-m-d h:i:s A T');
+        $redirect = $CFG->wwwroot.$_SERVER['REQUEST_URI'];
+
+        if (preg_match('#[?&]{0,1}sbo=[0-9]+#', $redirect)) {
+            $redirect = preg_replace('#([?&]{0,1})(sbo=[0-9]+)#', "$1sbo={$sbo}", $redirect);
+        } else {
+            $redirect .= strpos($redirect, '?') === false ? '?' : '&';
+            $redirect .= "sbo={$sbo}";
+        }
+
+        return <<<EOF
+<html>
+    <head>
+        <title>{$SITE->fullname}</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta http-equiv="refresh" content="{$sbo}; URL='{$redirect}'" />
+        <style>*{box-sizing:border-box;margin:0;padding:0}body{line-height:1.4;font-size:1rem;font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif;padding:2rem;display:grid;place-items:center;min-height:100vh}.container{width:100%;max-width:800px}p{margin-top:.5rem}</style>
+    </head>
+    <body>
+        <div class='container'>
+            <h1>
+                <div>Waiting on previous request.</div>
+                <div>Thanks for your patience.</div>
+            </h1>
+            <p>Your previous request is still being processed.</p>
+            <p><b>This page will automatically refresh, please do not close your browser.</b></p>
+            <p><b>Last updated:</b> {$timestamp}</p>
+        </div>
+    </body>
+</html>
+EOF;
     }
 
     public function release_waiter($waitkey) {
