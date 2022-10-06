@@ -147,7 +147,10 @@ class session extends \core\session\handler {
             // How long we try to get a lock for before displaying
             // the waiting room page. 0 = never show the page.
             'waitingroom_start' => 0,
+            // Max time between refreshes.
             'waitingroom_backoffmax' => 8,
+            // How long till we give up refreshing.
+            'waitingroom_maxwait' => 60,
             'waitingroom_statuscode' => '500 Internal Server Error',
         ];
 
@@ -479,28 +482,44 @@ class session extends \core\session\handler {
         // Session backoff.
         $sbo = optional_param('sbo', 1, PARAM_INT) * 2;
 
+        // Time we started waiting.
+        $sst = optional_param('sst', time(), PARAM_INT);
+
         // Max time between refreshing of 8 seconds.
         if ($sbo > $this->config['waitingroom_backoffmax']) {
             $sbo = $this->config['waitingroom_backoffmax'];
         }
 
         $timestamp = date('Y-m-d h:i:s A T');
-        $redirect = $CFG->wwwroot.$_SERVER['REQUEST_URI'];
 
-        if (preg_match('#[?&]{0,1}sbo=[0-9]+#', $redirect)) {
-            $redirect = preg_replace('#([?&]{0,1})(sbo=[0-9]+)#', "$1sbo={$sbo}", $redirect);
-        } else {
-            $redirect .= strpos($redirect, '?') === false ? '?' : '&';
-            $redirect .= "sbo={$sbo}";
+        $requrl = $CFG->wwwroot.$_SERVER['DOCUMENT_URI'];
+        // DOCUMENU_URI includes index.php when a users request may not have.
+        // Lets make sure our base URL here only includes it if they had it.
+        if (preg_match('#index\.php#', $requrl) && strpos($_SERVER['REQUEST_URI'], 'index.php') === false) {
+            $requrl = str_replace('index.php', '', $requrl);
         }
 
-        return <<<EOF
+        $params = array_merge($_GET, ['sst' => $sst, 'sbo' => $sbo]);
+        $redirect = $requrl.'?'.http_build_query($params);
+
+        $autoreload = time() - $sst < $this->config['waitingroom_maxwait'];
+
+        unset($params['sbo']);
+        unset($params['sst']);
+        $cleanurl = $requrl;
+        if (!empty($params)) {
+            $cleanurl .= '?'.http_build_query($params);
+        }
+
+        if ($autoreload) {
+            return <<<EOF
 <html>
     <head>
         <title>{$SITE->fullname}</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <meta http-equiv="refresh" content="{$sbo}; URL='{$redirect}'" />
         <style>*{box-sizing:border-box;margin:0;padding:0}body{line-height:1.4;font-size:1rem;font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif;padding:2rem;display:grid;place-items:center;min-height:100vh}.container{width:100%;max-width:800px}p{margin-top:.5rem}</style>
+        <script>window.history.replaceState('', '{$SITE->fullname}', '{$cleanurl}');</script>
     </head>
     <body>
         <div class='container'>
@@ -510,6 +529,30 @@ class session extends \core\session\handler {
             </h1>
             <p>Your previous request is still being processed.</p>
             <p><b>This page will automatically refresh, please do not close your browser.</b></p>
+            <p><b>Last updated:</b> {$timestamp}</p>
+        </div>
+    </body>
+</html>
+EOF;
+        }
+
+        // Max waiting time used up, render a different page.
+        return <<<EOF
+<html>
+    <head>
+        <title>{$SITE->fullname}</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>*{box-sizing:border-box;margin:0;padding:0}body{line-height:1.4;font-size:1rem;font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif;padding:2rem;display:grid;place-items:center;min-height:100vh}.container{width:100%;max-width:800px}p{margin-top:.5rem}</style>
+        <script>window.history.replaceState('', '{$SITE->fullname}', '{$cleanurl}');</script>
+    </head>
+    <body>
+        <div class='container'>
+            <h1>
+                <div>Waiting on previous request.</div>
+                <div>Thanks for your patience.</div>
+            </h1>
+            <p>Your previous request is still being processed.</p>
+            <p>Auto-refresh has now stopped. Please reload the page when you're ready to retry.</p>
             <p><b>Last updated:</b> {$timestamp}</p>
         </div>
     </body>
