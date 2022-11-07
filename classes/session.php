@@ -147,8 +147,6 @@ class session extends \core\session\handler {
             // How long we try to get a lock for before displaying
             // the waiting room page. 0 = never show the page.
             'waitingroom_start' => 0,
-            // Wait for lock only this long per refresh.
-            'waitingroom_poll' => 1,
             // Max time between refreshes.
             'waitingroom_backoffmax' => 8,
             // How long till we give up refreshing.
@@ -415,9 +413,6 @@ class session extends \core\session\handler {
         // Ensure on timeout or exception that we try to decrement the waiter count.
         \core_shutdown_manager::register_function([$this, 'release_waiter'], [$waitkey]);
 
-        // Waiting room - reduce lock polling time for subsequent refreshes.
-        $waitroompoll = optional_param('sst', 0, PARAM_INT) ? $this->config['waitingroom_poll'] : $this->config['waitingroom_start'];
-
         // To be able to ensure sessions don't write out of order we must obtain an exclusive lock
         // on the session for the entire time it is open.  If another AJAX call, or page is using
         // the session then we just wait until it finishes before we can open the session.
@@ -448,7 +443,7 @@ class session extends \core\session\handler {
             // long enough to trigger it.
             if ($reqget && !AJAX_SCRIPT
                 && $this->config['waitingroom_start'] > 0
-                && (time() > $startlocktime + $waitroompoll)) {
+                && (time() > $startlocktime + $this->config['waitingroom_start'])) {
                 $this->decrement($waitkey);
                 $this->waiting = false;
                 if (!empty($this->config['waitingroom_statuscode'])) {
