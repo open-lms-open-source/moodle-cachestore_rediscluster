@@ -56,6 +56,11 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
     protected $isready = false;
 
     /**
+     * Track iterators. Scan calls rely on these to track where they're up to.
+     */
+    protected $iterators = [];
+
+    /**
      * Cache definition for this store.
      *
      * @var cache_definition
@@ -315,10 +320,23 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
         $this->retrylimit = $limit;
     }
 
+    /**
+     * First argument should be the function to call in redis.
+     * The following arguments should be the arguments for that function.
+     *
+     * Exception for hscan/sscan/zscan - calls to command for these should not include
+     * the iterator argument, it needs to be managed via $this->iterators separately.
+     */
     public function command() {
         $args = func_get_args();
 
         $function = array_shift($args);
+
+        // If this is a scan call, we need to pass an iterator by reference.
+        if ($function == 'hscan' || $function == 'sscan' || $function == 'zscan') {
+            $args[2] = $args[1];
+            $args[1] = &$this->iterators[$args[0]];
+        }
 
         if ($this->retrylimit < 0) {
             $this->retrylimit = 0;
@@ -400,7 +418,7 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
      * @return array of all keys in the hash as a numbered array.
      */
     public function find_all() {
-        return $this->command('hkeys', $this->hash);
+        return $this->find_by_prefix('');
     }
 
     /**
@@ -411,13 +429,23 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
      * @return array List of keys that match this prefix.
      */
     public function find_by_prefix($prefix) {
-        $return = [];
-        foreach ($this->find_all() as $key) {
-            if (strpos($key, $prefix) === 0) {
-                $return[] = $key;
+        $hashes = [$this->hash];
+
+        if ($this->sharded) {
+            $hashes = [];
+            for ($shard = 0; $shard < $this->config['shardsize']; $shard++) {
+                $hashes[] = "{$this->hash}-{$shard}";
             }
         }
-        return $return;
+
+        $keys = [];
+        foreach ($hashes as $hash) {
+            $this->iterators[$hash] = null;
+            while ($this->iterators[$hash] !== 0) {
+                $keys = array_merge($keys, array_keys($this->command('hscan', $hash, "${prefix}*")));
+            }
+        }
+        return $keys;
     }
 
     /**
@@ -755,6 +783,8 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
 
         // If the configuration is not defined correctly, return only the configuration know about.
         $config = [
+            // In unit testing, we don't want to have to wait for consistency to replicas.
+            'failover' => RedisCluster::FAILOVER_ERROR,
             'persist' => true,
             'prefix' => $DB->get_prefix(),
         ];
