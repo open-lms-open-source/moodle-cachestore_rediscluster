@@ -434,7 +434,7 @@ class session extends \core\session\handler {
             // time. If it is too small we will poll too much and if it is
             // too large we will waste time waiting for no reason. 100ms is
             // the default starting point.
-            $delay = rand($this->lockretry, $this->lockretry * 1.1);
+            $delay = rand($this->lockretry, (int)($this->lockretry * 1.1));
 
             // If we don't get a lock within 5 seconds then there must be a
             // very long lived process holding the lock so throttle back to
