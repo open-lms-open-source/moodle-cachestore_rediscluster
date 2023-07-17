@@ -101,6 +101,9 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
      */
     private $internalprefix = '';
 
+    /** @var ?array Array of current locks, or null if we haven't registered shutdown function */
+    protected $currentlocks = null;
+
     /**
      * Determines if the requirements for this type of store are met.
      *
@@ -164,6 +167,8 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
         $this->config = [
             'compression' => Redis::COMPRESSION_NONE,
             'failover' => RedisCluster::FAILOVER_DISTRIBUTE,
+            'lockwait' => 60,
+            'locktimeout' => 600,
             'persist' => false,
             'preferrednodes' => null,
             'prefix' => '',
@@ -671,8 +676,42 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
      * @return bool True if the lock was acquired, false if it was not.
      */
     public function acquire_lock($key, $ownerid) {
-        return $this->command('setnx', $key, $ownerid);
+        $timelimit = time() + $this->config['lockwait'];
+
+        $params = ['nx'];
+        if ($this->config['locktimeout'] > 0) {
+            // Ensure Redis deletes the key after a bit in case something goes wrong.
+            $params['ex'] = $this->config['locktimeout'];
+        }
+        do {
+            if ($this->command('set', $key, $ownerid, $params)) {
+                // If we haven't got it already, better register a shutdown function.
+                if ($this->currentlocks === null) {
+                    core_shutdown_manager::register_function([$this, 'shutdown_release_locks']);
+                    $this->currentlocks = [];
+                }
+                $this->currentlocks[$key] = $ownerid;
+                return true;
+            }
+            // Wait 1 second then retry.
+            sleep(1);
+        } while (time() < $timelimit);
+        return false;
     }
+
+    /**
+     * Releases any locks when the system shuts down, in case there is a crash or somebody forgets
+     * to use 'try-finally'.
+     *
+     * Do not call this function manually (except from unit test).
+     */
+    public function shutdown_release_locks() {
+        foreach ($this->currentlocks as $key => $ownerid) {
+            debugging('Automatically releasing Redis cache lock: ' . $key . ' (' . $ownerid .
+                    ') - did somebody forget to call release_lock()?', DEBUG_DEVELOPER);
+            $this->release_lock($key, $ownerid);
+        }
+     }
 
     /**
      * Checks a lock with a given name and owner information.
@@ -685,7 +724,7 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
      */
     public function check_lock_state($key, $ownerid) {
         $result = $this->command('get', $key);
-        if ($result === $ownerid) {
+        if ($result === (string)$ownerid) {
             return true;
         }
         if ($result === false) {
@@ -704,6 +743,7 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
      */
     public function release_lock($key, $ownerid) {
         if ($this->check_lock_state($key, $ownerid)) {
+            unset($this->currentlocks[$key]);
             return ($this->command('del', $key) !== false);
         }
         return false;
