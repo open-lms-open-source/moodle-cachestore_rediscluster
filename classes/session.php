@@ -90,7 +90,7 @@ class session extends \core\session\handler {
      *
      * @var array
      */
-    protected $locks = array();
+    protected $locks = [];
 
     /**
      * How long sessions live before expiring from inactivity (in seconds).
@@ -222,12 +222,12 @@ class session extends \core\session\handler {
 
         $this->connection = new \cachestore_rediscluster(null, $this->config);
 
-        $result = session_set_save_handler(array($this, 'handler_open'),
-            array($this, 'handler_close'),
-            array($this, 'handler_read'),
-            array($this, 'handler_write'),
-            array($this, 'handler_destroy'),
-            array($this, 'handler_gc'));
+        $result = session_set_save_handler([$this, 'handler_open'],
+            [$this, 'handler_close'],
+            [$this, 'handler_read'],
+            [$this, 'handler_write'],
+            [$this, 'handler_destroy'],
+            [$this, 'handler_gc']);
         if (!$result) {
             throw new \Exception('Session handler is misconfigured');
         }
@@ -669,7 +669,7 @@ EOF;
             return;
         }
 
-        $rs = $DB->get_recordset('sessions', array(), 'id DESC', 'id, sid');
+        $rs = $DB->get_recordset('sessions', [], 'id DESC', 'id, sid');
         foreach ($rs as $record) {
             $this->handler_destroy($record->sid);
         }

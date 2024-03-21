@@ -40,7 +40,7 @@ class lock_maxwaiters extends sharedconn implements \core\lock\lock_factory {
     protected $type;
 
     /** @var array $openlocks - List of held locks - used by auto-release */
-    protected $openlocks = array();
+    protected $openlocks = [];
 
     /**
      * The maximum amount of threads a given resource can have active.
@@ -81,7 +81,7 @@ class lock_maxwaiters extends sharedconn implements \core\lock\lock_factory {
 
         parent::__construct();
 
-        \core_shutdown_manager::register_function(array($this, 'auto_release'));
+        \core_shutdown_manager::register_function([$this, 'auto_release']);
     }
 
     /**
