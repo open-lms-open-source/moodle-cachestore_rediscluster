@@ -447,7 +447,7 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
         foreach ($hashes as $hash) {
             $this->iterators[$hash] = null;
             while ($this->iterators[$hash] !== 0) {
-                $keys = array_merge($keys, array_keys($this->command('hscan', $hash, "${prefix}*")));
+                $keys = array_merge($keys, array_keys($this->command('hscan', $hash, "{$prefix}*")));
             }
         }
         return $keys;
