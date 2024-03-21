@@ -24,7 +24,7 @@
 
 namespace cachestore_rediscluster;
 
-use \core\lock\lock as lock;
+use core\lock\lock as lock;
 
 defined('MOODLE_INTERNAL') || die();
 
