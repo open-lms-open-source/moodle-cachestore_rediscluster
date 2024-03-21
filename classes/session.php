@@ -524,7 +524,8 @@ class session extends \core\session\handler {
         <title>{$SITE->fullname}</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <meta http-equiv="refresh" content="{$sbo}; URL='{$redirect}'" />
-        <style>*{box-sizing:border-box;margin:0;padding:0}body{line-height:1.4;font-size:1rem;font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",
+        <style>*{box-sizing:border-box;margin:0;padding:0}body{line-height:1.4;font-size:1rem;font-family:ui-sans-serif,system-ui,
+            -apple-system,BlinkMacSystemFont,"Segoe UI",
             Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif;padding:2rem;
             display:grid;place-items:center;min-height:100vh}.container{width:100%;max-width:800px}p{margin-top:.5rem}</style>
         <script>window.history.replaceState('', '{$SITE->fullname}', '{$cleanurl}');</script>
@@ -550,7 +551,8 @@ EOF;
     <head>
         <title>{$SITE->fullname}</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>*{box-sizing:border-box;margin:0;padding:0}body{line-height:1.4;font-size:1rem;font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",
+        <style>*{box-sizing:border-box;margin:0;padding:0}body{line-height:1.4;font-size:1rem;font-family:ui-sans-serif,system-ui,
+            -apple-system,BlinkMacSystemFont,"Segoe UI",
             Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif;padding:2rem;
             display:grid;place-items:center;min-height:100vh}.container{width:100%;max-width:800px}p{margin-top:.5rem}</style>
         <script>window.history.replaceState('', '{$SITE->fullname}', '{$cleanurl}');</script>
