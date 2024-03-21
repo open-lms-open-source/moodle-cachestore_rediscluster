@@ -711,7 +711,7 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
                     ') - did somebody forget to call release_lock()?', DEBUG_DEVELOPER);
             $this->release_lock($key, $ownerid);
         }
-     }
+    }
 
     /**
      * Checks a lock with a given name and owner information.
