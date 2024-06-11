@@ -27,121 +27,243 @@ namespace cachestore_rediscluster;
 
 defined('MOODLE_INTERNAL') || die();
 
-require_once($CFG->dirroot . '/auth/saml2/.extlib/simplesamlphp/lib/SimpleSAML/Store.php');
-
-/**
- * RedisCluster store simpleSAMLphp class for auth/saml2.
- *
- * @package    cachestore_rediscluster
- * @copyright  Copyright (c) 2021 Open LMS (https://www.openlms.net)
- * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- */
-class auth_saml2_store extends \SimpleSAML\Store {
+if (file_exists($CFG->dirroot . '/auth/saml2/.extlib/simplesamlphp/lib/SimpleSAML/Store.php')) {
+    // auth_saml2 older than 2023100300
+    require_once($CFG->dirroot . '/auth/saml2/.extlib/simplesamlphp/lib/SimpleSAML/Store.php');
 
     /**
-     * The connection config for RedisCluster.
+     * RedisCluster store simpleSAMLphp class for auth/saml2.
      *
-     * @var string
+     * @package    cachestore_rediscluster
+     * @copyright  Copyright (c) 2021 Open LMS (https://www.openlms.net)
+     * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
      */
-    protected $config;
+    class auth_saml2_store extends \SimpleSAML\Store {
 
-    /**
-     * The RedisCluster cachestore object.
-     *
-     * @var cachestore_rediscluster
-     */
-    protected $connection = null;
+        /**
+         * The connection config for RedisCluster.
+         *
+         * @var string
+         */
+        protected $config;
 
-    /**
-     * Create new instance of handler.
-     */
-    public function __construct() {
-        global $CFG;
+        /**
+         * The RedisCluster cachestore object.
+         *
+         * @var cachestore_rediscluster
+         */
+        protected $connection = null;
 
-        $this->config = [
-            'compression' => \Redis::COMPRESSION_NONE,
-            'failover' => \RedisCluster::FAILOVER_NONE,
-            'persist' => false,
-            'preferrednodes' => null,
-            'prefix' => 'simpleSAMLphp.' . $CFG->dbname . '.',
-            'readtimeout' => 3.0,
-            'serializer' => \Redis::SERIALIZER_PHP,
-            'server' => null,
-            'serversecondary' => null,
-            'session' => false,
-            'timeout' => 3.0,
-        ];
+        /**
+         * Create new instance of handler.
+         */
+        public function __construct() {
+            global $CFG;
 
-        foreach (array_keys($this->config) as $key) {
-            if (!empty($CFG->auth_saml2_rediscluster[$key])) {
-                $this->config[$key] = $CFG->auth_saml2_rediscluster[$key];
+            $this->config = [
+                'compression' => \Redis::COMPRESSION_NONE,
+                'failover' => \RedisCluster::FAILOVER_NONE,
+                'persist' => false,
+                'preferrednodes' => null,
+                'prefix' => 'simpleSAMLphp.' . $CFG->dbname . '.',
+                'readtimeout' => 3.0,
+                'serializer' => \Redis::SERIALIZER_PHP,
+                'server' => null,
+                'serversecondary' => null,
+                'session' => false,
+                'timeout' => 3.0,
+            ];
+
+            foreach (array_keys($this->config) as $key) {
+                if (!empty($CFG->auth_saml2_rediscluster[$key])) {
+                    $this->config[$key] = $CFG->auth_saml2_rediscluster[$key];
+                }
+            }
+
+            if (!$this->init()) {
+                throw new \coding_exception("Could not configure rediscluster for auth_saml2");
             }
         }
 
-        if (!$this->init()) {
-            throw new \coding_exception("Could not configure rediscluster for auth_saml2");
-        }
-    }
+        /**
+         * Init connection.
+         */
+        protected function init() {
+            global $CFG;
 
-    /**
-     * Init connection.
-     */
-    protected function init() {
-        global $CFG;
+            require_once("{$CFG->dirroot}/cache/stores/rediscluster/lib.php");
 
-        require_once("{$CFG->dirroot}/cache/stores/rediscluster/lib.php");
+            if (!extension_loaded('redis') || empty($this->config['server']) || !class_exists('RedisCluster')) {
+                return false;
+            }
 
-        if (!extension_loaded('redis') || empty($this->config['server']) || !class_exists('RedisCluster')) {
-            return false;
-        }
-
-        $this->connection = new \cachestore_rediscluster(null, $this->config);
-        return true;
-    }
-
-    /**
-     * @param string   $type
-     * @param string   $key
-     * @param mixed    $value
-     * @param int|null $expire
-     */
-    public function set($type, $key, $value, $expire = null) {
-        $now = time();
-        if ($expire !== null && $expire > $now) {
-            $this->connection->command('setex', $this->make_key($type, $key), $expire - $now, $value);
-        } else {
-            $this->connection->command('set', $this->make_key($type, $key), $value);
-        }
-    }
-
-    /**
-     * @param string $type
-     * @param string $key
-     * @return mixed|null
-     */
-    public function get($type, $key) {
-        $value = $this->connection->command('get', $this->make_key($type, $key));
-        if ($value === false) {
-            $value = null;
+            $this->connection = new \cachestore_rediscluster(null, $this->config);
+            return true;
         }
 
-        return $value;
-    }
+        /**
+         * @param string   $type
+         * @param string   $key
+         * @param mixed    $value
+         * @param int|null $expire
+         */
+        public function set($type, $key, $value, $expire = null) {
+            $now = time();
+            if ($expire !== null && $expire > $now) {
+                $this->connection->command('setex', $this->make_key($type, $key), $expire - $now, $value);
+            } else {
+                $this->connection->command('set', $this->make_key($type, $key), $value);
+            }
+        }
 
-    /**
-     * @param string $type
-     * @param string $key
-     */
-    public function delete($type, $key) {
-        $this->connection->command('unlink', $this->make_key($type, $key));
-    }
+        /**
+         * @param string $type
+         * @param string $key
+         * @return mixed|null
+         */
+        public function get($type, $key) {
+            $value = $this->connection->command('get', $this->make_key($type, $key));
+            if ($value === false) {
+                $value = null;
+            }
 
+            return $value;
+        }
+
+        /**
+         * @param string $type
+         * @param string $key
+         */
+        public function delete($type, $key) {
+            $this->connection->command('unlink', $this->make_key($type, $key));
+        }
+
+        /**
+         * @param string $type
+         * @param string $key
+         * @return string
+         */
+        protected function make_key($type, $key) {
+            return $type . '.' . $key;
+        }
+    }
+} else if (file_exists($CFG->dirroot . '/auth/saml2/.extlib/simplesamlphp/src/SimpleSAML/Store/StoreInterface.php')) {
+    // auth_saml2 version 2023100300 or newer
+    require_once($CFG->dirroot . '/auth/saml2/.extlib/simplesamlphp/src/SimpleSAML/Store/StoreInterface.php');
     /**
-     * @param string $type
-     * @param string $key
-     * @return string
+     * RedisCluster store simpleSAMLphp class for auth/saml2.
+     *
+     * @package    cachestore_rediscluster
+     * @copyright  Copyright (c) 2021 Open LMS (https://www.openlms.net)
+     * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
      */
-    protected function make_key($type, $key) {
-        return $type . '.' . $key;
+    class auth_saml2_store implements \SimpleSAML\Store\StoreInterface {
+
+        /**
+         * The connection config for RedisCluster.
+         *
+         * @var string
+         */
+        protected $config;
+
+        /**
+         * The RedisCluster cachestore object.
+         *
+         * @var cachestore_rediscluster
+         */
+        protected $connection = null;
+
+        /**
+         * Create new instance of handler.
+         */
+        public function __construct() {
+            global $CFG;
+
+            $this->config = [
+                'compression' => \Redis::COMPRESSION_NONE,
+                'failover' => \RedisCluster::FAILOVER_NONE,
+                'persist' => false,
+                'preferrednodes' => null,
+                'prefix' => 'simpleSAMLphp.' . $CFG->dbname . '.',
+                'readtimeout' => 3.0,
+                'serializer' => \Redis::SERIALIZER_PHP,
+                'server' => null,
+                'serversecondary' => null,
+                'session' => false,
+                'timeout' => 3.0,
+            ];
+
+            foreach (array_keys($this->config) as $key) {
+                if (!empty($CFG->auth_saml2_rediscluster[$key])) {
+                    $this->config[$key] = $CFG->auth_saml2_rediscluster[$key];
+                }
+            }
+
+            if (!$this->init()) {
+                throw new \coding_exception("Could not configure rediscluster for auth_saml2");
+            }
+        }
+
+        /**
+         * Init connection.
+         */
+        protected function init() {
+            global $CFG;
+
+            require_once("{$CFG->dirroot}/cache/stores/rediscluster/lib.php");
+
+            if (!extension_loaded('redis') || empty($this->config['server']) || !class_exists('RedisCluster')) {
+                return false;
+            }
+
+            $this->connection = new \cachestore_rediscluster(null, $this->config);
+            return true;
+        }
+
+        /**
+         * @param string   $type
+         * @param string   $key
+         * @param mixed    $value
+         * @param int|null $expire
+         */
+        public function set(string $type, string $key, $value, ?int $expire = null): void {
+            $now = time();
+            if ($expire !== null && $expire > $now) {
+                $this->connection->command('setex', $this->make_key($type, $key), $expire - $now, $value);
+            } else {
+                $this->connection->command('set', $this->make_key($type, $key), $value);
+            }
+        }
+
+        /**
+         * @param string $type
+         * @param string $key
+         * @return mixed|null
+         */
+        public function get(string $type, string $key) {
+            $value = $this->connection->command('get', $this->make_key($type, $key));
+            if ($value === false) {
+                $value = null;
+            }
+
+            return $value;
+        }
+
+        /**
+         * @param string $type
+         * @param string $key
+         */
+        public function delete(string $type, string $key): void {
+            $this->connection->command('unlink', $this->make_key($type, $key));
+        }
+
+        /**
+         * @param string $type
+         * @param string $key
+         * @return string
+         */
+        protected function make_key($type, $key) {
+            return $type . '.' . $key;
+        }
     }
 }
