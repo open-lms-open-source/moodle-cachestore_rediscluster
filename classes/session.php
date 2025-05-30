@@ -24,6 +24,11 @@
 
 namespace cachestore_rediscluster;
 
+use core\di;
+use core\clock;
+use core\session\handler;
+use SessionHandlerInterface;
+
 defined('MOODLE_INTERNAL') || die();
 
 // We need to explicitly include cachestore_rediscluster here as it isn't able
@@ -35,7 +40,7 @@ require_once(__DIR__ . '/../lib.php');
  *
  * Forked from the core redis session handler.
  */
-class session extends \core\session\handler {
+class session extends handler implements SessionHandlerInterface {
 
     /**
      * The connection config for RedisCluster.
@@ -126,6 +131,21 @@ class session extends \core\session\handler {
      */
     protected $waiting = false;
 
+    /** @var string $sessionkeyprefix the prefix for the session key */
+    protected string $sessionkeyprefix = 'session_';
+
+    /** @var string $userkeyprefix the prefix for the user key */
+    protected string $userkeyprefix = 'user_';
+
+    /** @var clock A clock instance */
+    protected clock $clock;
+
+    /** @var int $gcbatchsize The number of redis keys that will be processed each time the garbage collector is executed. */
+    protected int $gcbatchsize = 100;
+
+    /** @var int $firstaccesstimeout The initial timeout (seconds) for the first browser access without login. */
+    protected int $firstaccesstimeout = 180;
+
     /**
      * Create new instance of handler.
      */
@@ -183,24 +203,18 @@ class session extends \core\session\handler {
             $this->tracklockhost = $CFG->session_rediscluster['tracklockhost'];
         }
 
-        // The following configures the session lifetime in redis to allow some
-        // wriggle room in the user noticing they've been booted off and
-        // letting them log back in before they lose their session entirely.
-        $updatefreq = empty($CFG->session_update_timemodified_frequency) ? 20 : $CFG->session_update_timemodified_frequency;
-        $this->timeout = $CFG->sessiontimeout + $updatefreq + MINSECS;
-
         if (!defined('NO_SESSION_LOCK')) {
             define('NO_SESSION_LOCK', false);
         }
         $this->nolock = NO_SESSION_LOCK;
 
         $this->lockhostkey = "mdl_locklist:".gethostname();
+
+        $this->clock = di::get(clock::class);
     }
 
-    /**
-     * Init session handler.
-     */
-    public function init() {
+    #[\Override]
+    public function init(): bool {
         global $CFG;
 
         require_once("{$CFG->dirroot}/cache/stores/rediscluster/lib.php");
@@ -222,12 +236,7 @@ class session extends \core\session\handler {
 
         $this->connection = new \cachestore_rediscluster(null, $this->config);
 
-        $result = session_set_save_handler([$this, 'handler_open'],
-            [$this, 'handler_close'],
-            [$this, 'handler_read'],
-            [$this, 'handler_write'],
-            [$this, 'handler_destroy'],
-            [$this, 'handler_gc']);
+        $result = session_set_save_handler($this);
         if (!$result) {
             throw new \Exception('Session handler is misconfigured');
         }
@@ -241,7 +250,7 @@ class session extends \core\session\handler {
      * @param string $sessionname Session name for this session. (ignored)
      * @return bool true always as we will succeed.
      */
-    public function handler_open($savepath, $sessionname) {
+    public function open(string $savepath, string $sessionname): bool {
         return true;
     }
 
@@ -250,11 +259,11 @@ class session extends \core\session\handler {
      *
      * @return bool true on success.  false on unable to unlock sessions.
      */
-    public function handler_close() {
+    public function close(): bool {
         $this->lasthash = null;
         try {
             foreach ($this->locks as $id => $expirytime) {
-                if ($expirytime > time()) {
+                if ($expirytime > $this->clock->time()) {
                     $this->unlock_session($id);
                 }
                 unset($this->locks[$id]);
@@ -274,24 +283,41 @@ class session extends \core\session\handler {
      *
      * @throws RedisException when we are unable to talk to the Redis server.
      */
-    public function handler_read($id) {
+    public function read(string $id): string|false {
         try {
             if ($this->requires_write_lock()) {
-                $this->lock_session($id);
+                $this->lock_session($this->sessionkeyprefix . $id);
             }
-            $sessiondata = $this->connection->command('get', $id);
+
+            $keys = $this->connection->command('hmget', $this->sessionkeyprefix . $id, ['userid', 'sessdata']);
+            $userid = $keys['userid'];
+            $sessiondata = $keys['sessdata'];
+
             if ($sessiondata === false) {
                 if ($this->requires_write_lock()) {
-                    $this->unlock_session($id);
+                    $this->unlock_session($this->sessionkeyprefix . $id);
                 }
                 $this->lasthash = sha1('');
                 return '';
             }
-            $this->connection->command('expire', $id, $this->timeout);
+
+            // Do not update expiry if non-login user (0). This would affect the first access timeout.
+            if ($userid != 0) {
+                $maxlifetime = $this->get_maxlifetime($userid);
+                $this->connection->command('expire', $this->sessionkeyprefix . $id, $maxlifetime);
+                $this->connection->command('expire', $this->userkeyprefix . $userid, $maxlifetime);
+            }
         } catch (\RedisException $e) {
             debugging('Failed talking to redis: '.$e->getMessage(), DEBUG_DEVELOPER);
             throw $e;
         }
+
+        // Update last hash.
+        if ($sessiondata === null) {
+            // As of PHP 8.1 we can't pass null to base64_encode.
+            $sessiondata = '';
+        }
+    
         $this->lasthash = sha1(base64_encode($sessiondata));
         return $sessiondata;
     }
@@ -303,7 +329,7 @@ class session extends \core\session\handler {
      * @param string $data session data
      * @return bool true on write success, false on failure
      */
-    public function handler_write($id, $data) {
+    public function write(string $id, string $data): bool {
         if ($this->nolock) {
             return true;
         }
@@ -325,10 +351,128 @@ class session extends \core\session\handler {
         // There can be race conditions on new sessions racing each other but we can
         // address that in the future.
         try {
-            $this->connection->command('setex', $id, $this->timeout, $data);
+            $this->connection->command('hset', $this->sessionkeyprefix . $id, 'sessdata', $data);
+            $keys = $this->connection->command('hmget', $this->sessionkeyprefix . $id, ['userid', 'timecreated', 'timemodified']);
+            $userid = $keys['userid'];
+
+            // Don't update expiry if still first access.
+            if ($keys['timecreated'] != $keys['timemodified']) {
+                $maxlifetime = $this->get_maxlifetime($userid);
+                $this->connection->command('expire', $this->sessionkeyprefix . $id, $maxlifetime);
+                $this->connection->command('expire', $this->userkeyprefix . $userid, $maxlifetime);
+            }
         } catch (\RedisException $e) {
             debugging('Failed talking to redis: '.$e->getMessage(), DEBUG_DEVELOPER);
             return false;
+        }
+        return true;
+    }
+
+    #[\Override]
+    public function get_session_by_sid(string $sid): \stdClass {
+        $this->init_redis_if_required();
+        $keys = ["id", "state", "sid", "userid", "sessdata", "timecreated", "timemodified", "firstip", "lastip"];
+        $sessiondata = $this->connection->command('hmget', $this->sessionkeyprefix . $sid, $keys);
+
+        return (object)$sessiondata;
+    }
+
+    #[\Override]
+    public function add_session(int $userid): \stdClass {
+        $timestamp = $this->clock->time();
+        $sid = session_id();
+        $maxlifetime = $this->get_maxlifetime($userid, true);
+        $sessiondata = [
+            'id' => $sid,
+            'state' => '0',
+            'sid' => $sid,
+            'userid' => $userid,
+            'sessdata' => null,
+            'timecreated' => $timestamp,
+            'timemodified' => $timestamp,
+            'firstip' => getremoteaddr(),
+            'lastip' => getremoteaddr(),
+        ];
+
+        $userhashkey = $this->userkeyprefix . $userid;
+        $this->connection->command('hSet', $userhashkey, $sid, $timestamp);
+        $this->connection->command('expire', $userhashkey, $maxlifetime);
+
+        $sessionhashkey = $this->sessionkeyprefix . $sid;
+        $this->connection->command('hmSet', $sessionhashkey, $sessiondata);
+        $this->connection->command('expire', $sessionhashkey, $maxlifetime);
+
+        return (object)$sessiondata;
+    }
+
+    #[\Override]
+    public function get_sessions_by_userid(int $userid): array {
+        $this->init_redis_if_required();
+
+        $userhashkey = $this->userkeyprefix . $userid;
+        $sessions = $this->connection->command('hGetAll', $userhashkey);
+        $records = [];
+        foreach (array_keys($sessions) as $session) {
+            $item = $this->connection->command('hGetAll', $this->sessionkeyprefix . $session);
+            if (!empty($item)) {
+                $records[] = (object) $item;
+            }
+        }
+        return $records;
+    }
+
+    #[\Override]
+    public function update_session(\stdClass $record): bool {
+        if (!isset($record->sid) && isset($record->id)) {
+            $record->sid = $record->id;
+        }
+
+        // If record does not have userid set, we need to get it from the session.
+        if (!isset($record->userid)) {
+            $session = $this->get_session_by_sid($record->sid);
+            $record->userid = $session->userid;
+        }
+
+        $sessionhashkey = $this->sessionkeyprefix . $record->sid;
+        $userhashkey = $this->userkeyprefix . $record->userid;
+
+        $recordata = (array) $record;
+        unset($recordata['sid']);
+        $this->connection->command('hmSet', $sessionhashkey, $recordata);
+
+        // Update the expiry time.
+        $maxlifetime = $this->get_maxlifetime($record->userid);
+        $this->connection->command('expire', $sessionhashkey, $maxlifetime);
+        $this->connection->command('expire', $userhashkey, $maxlifetime);
+
+        return true;
+    }
+
+
+    #[\Override]
+    public function get_all_sessions(): \Iterator {
+        $sessions = [];
+        $keys = $this->connection->scan('*' . $this->sessionkeyprefix . '*');
+        foreach ($keys as $key) {
+            if (!str_ends_with($key, '.lock') && !str_ends_with($key, '.lock.waiting')) {
+                $sessions[] = $key;
+            }
+        }
+        return new \ArrayIterator($sessions);
+    }
+
+    #[\Override]
+    public function destroy_all(): bool {
+        $this->init_redis_if_required();
+
+        $sessions = $this->get_all_sessions();
+        foreach ($sessions as $session) {
+            // Remove the prefixes from the session id, as destroy expects the raw session id.
+            if (str_starts_with($session, $this->sessionkeyprefix)) {
+                $session = substr($session, strlen($this->sessionkeyprefix));
+            }
+
+            $this->destroy($session);
         }
         return true;
     }
@@ -339,12 +483,17 @@ class session extends \core\session\handler {
      * @param string $id the session id to destroy.
      * @return bool true if the session was deleted, false otherwise.
      */
-    public function handler_destroy($id) {
+    public function destroy($id): bool {
+        $this->init_redis_if_required();
         $this->lasthash = null;
         try {
-            $this->connection->command('del', $id);
+            $sessionhashkey = $this->sessionkeyprefix . $id;
+            $userid = $this->connection->command('hget', $sessionhashkey, "userid");
+            $userhashkey = $this->userkeyprefix . $userid;
+            $this->connection->command('hDel', $userhashkey, $id);
+            $this->connection->command('unlink', $sessionhashkey);
             $this->unlock_session($id);
-            $this->connection->command('del', $id.'.lock.waiting');
+            $this->connection->command('unlink', $this->sessionkeyprefix . $id . '.lock.waiting');
         } catch (\RedisException $e) {
             debugging('Failed talking to redis: '.$e->getMessage(), DEBUG_DEVELOPER);
             return false;
@@ -353,15 +502,12 @@ class session extends \core\session\handler {
         return true;
     }
 
-    /**
-     * Garbage collect sessions.  We don't we any as Redis does it for us.
-     *
-     * @param integer $maxlifetime All sessions older than this should be removed.
-     * @return bool true, as Redis handles expiry for us.
-     */
-    public function handler_gc($maxlifetime) {
-        return true;
+    // phpcs:disable moodle.NamingConventions.ValidVariableName.VariableNameUnderscore
+    #[\Override]
+    public function gc(int $max_lifetime = 0): int|false {
+        return 0;
     }
+    // phpcs:enable
 
     /**
      * Unlock a session.
@@ -372,7 +518,7 @@ class session extends \core\session\handler {
         if (isset($this->locks[$id])) {
             $lockkey = "{$id}.lock";
             $this->connection->set_retry_limit(1); // Try extra hard to unlock the session.
-            $this->connection->command('del', $lockkey);
+            $this->connection->command('unlink', $lockkey);
 
             if ($this->tracklockhost) {
                 // Remove the lock from our list of held locks for this host.
@@ -398,8 +544,8 @@ class session extends \core\session\handler {
             return true;
         }
 
-        $haslock = isset($this->locks[$id]) && time() < $this->locks[$id];
-        $startlocktime = time();
+        $haslock = isset($this->locks[$id]) && $this->clock->time() < $this->locks[$id];
+        $startlocktime = $this->clock->time();
         $waitkey = "{$lockkey}.waiting";
 
         // Create the waiting key, or increment it if we end up queued.
@@ -423,7 +569,7 @@ class session extends \core\session\handler {
         // on the session for the entire time it is open.  If another AJAX call, or page is using
         // the session then we just wait until it finishes before we can open the session.
         while (!$haslock) {
-            $expiry = time() + $this->lockexpire;
+            $expiry = $this->clock->time() + $this->lockexpire;
             $haslock = $this->get_lock($lockkey);
             if ($haslock) {
                 $this->locks[$id] = $expiry;
@@ -440,7 +586,7 @@ class session extends \core\session\handler {
             // If we don't get a lock within 5 seconds then there must be a
             // very long lived process holding the lock so throttle back to
             // just polling roughly once a second.
-            if (time() > $startlocktime + 5) {
+            if ($this->clock->time() > $startlocktime + 5) {
                 $delay = min(rand(1000, 1100), $delay);
             }
 
@@ -449,7 +595,7 @@ class session extends \core\session\handler {
             // long enough to trigger it.
             if ($reqget && !AJAX_SCRIPT
                 && $this->config['waitingroom_start'] > 0
-                && (time() > $startlocktime + $waitroompoll)) {
+                && ($this->clock->time() > $startlocktime + $waitroompoll)) {
                 $this->decrement($waitkey);
                 $this->waiting = false;
                 if (!empty($this->config['waitingroom_statuscode'])) {
@@ -460,7 +606,7 @@ class session extends \core\session\handler {
                 exit;
             }
 
-            if (time() > $startlocktime + $this->acquiretimeout) {
+            if ($this->clock->time() > $startlocktime + $this->acquiretimeout) {
                 // This is a fatal error, better inform users.
                 // It should not happen very often - all pages that need long time to execute
                 // should close session immediately after access control checks.
@@ -489,7 +635,7 @@ class session extends \core\session\handler {
         $sbo = optional_param('sbo', 1, PARAM_INT) * 2;
 
         // Time we started waiting.
-        $sst = optional_param('sst', time(), PARAM_INT);
+        $sst = optional_param('sst', $this->clock->time(), PARAM_INT);
 
         // Max time between refreshing of 8 seconds.
         if ($sbo > $this->config['waitingroom_backoffmax']) {
@@ -508,7 +654,7 @@ class session extends \core\session\handler {
         $params = array_merge($_GET, ['sst' => $sst, 'sbo' => $sbo]);
         $redirect = $requrl.'?'.http_build_query($params);
 
-        $autoreload = time() - $sst < $this->config['waitingroom_maxwait'];
+        $autoreload = $this->clock->time() - $sst < $this->config['waitingroom_maxwait'];
 
         unset($params['sbo']);
         unset($params['sst']);
@@ -594,7 +740,7 @@ EOF;
         global $CFG;
 
         $meta = [
-            'createdat' => time(),
+            'createdat' => $this->clock->time(),
             'instance' => isset($CFG->puppet_instance) ? $CFG->puppet_instance : '',
             'lockkey' => $lockkey,
             'script' => isset($_SERVER['SCRIPT_FILENAME']) ? $_SERVER['SCRIPT_FILENAME'] : '',
@@ -647,53 +793,60 @@ EOF;
                     'Unable to get a session waiter.');
     }
 
-    /**
-     * Check the backend contains data for this session id.
-     *
-     * Note: this is intended to be called from manager::session_exists() only.
-     *
-     * @param string $sid
-     * @return bool true if session found.
-     */
+    #[\Override]
     public function session_exists($sid) {
         if (!$this->connection) {
             return false;
         }
 
         try {
-            return !empty($this->connection->command('exists', $sid));
+            $sessionhashkey = $this->sessionkeyprefix . $sid;
+            return !empty($this->connection->command('exists', $sessionhashkey));
         } catch (\RedisException $e) {
             return false;
         }
     }
 
     /**
-     * Kill all active sessions, the core sessions table is purged afterwards.
+     * Get session maximum lifetime in seconds.
+     *
+     * @param int|null $userid The user id to calculate the max lifetime for.
+     * @param bool $firstbrowseraccess This indicates that this is calculating the expiry when the key is first added.
+     *                                 The first access made by the browser has a shorter timeout to reduce abandoned sessions.
+     * @return float|int
      */
-    public function kill_all_sessions() {
-        global $DB;
-        if (!$this->connection) {
-            return;
+    private function get_maxlifetime(?int $userid = null, bool $firstbrowseraccess = false): float|int {
+        global $CFG;
+
+        // Guest user.
+        if ($userid == $CFG->siteguest) {
+            return $CFG->sessiontimeout * 5;
         }
 
-        $rs = $DB->get_recordset('sessions', [], 'id DESC', 'id, sid');
-        foreach ($rs as $record) {
-            $this->handler_destroy($record->sid);
+        // All other users.
+        if ($userid == 0 && $firstbrowseraccess) {
+            $maxlifetime = $this->firstaccesstimeout;
+        } else {
+            // As per MDL-56823 - The following configures the session lifetime in redis to allow some
+            // wriggle room in the user noticing they've been booted off and
+            // letting them log back in before they lose their session entirely.
+            $updatefreq = empty($CFG->session_update_timemodified_frequency) ? 20 : $CFG->session_update_timemodified_frequency;
+            $maxlifetime = (int) $CFG->sessiontimeout + $updatefreq + MINSECS;
         }
-        $rs->close();
+
+        return $maxlifetime;
     }
 
     /**
-     * Kill one session, the session record is removed afterwards.
+     * Connection will be null if these methods are called from cli or where NO_MOODLE_COOKIES is used.
+     * We need to check for this and initialize the connection if required.
      *
-     * @param string $sid
+     * @return void
      */
-    public function kill_session($sid) {
-        if (!$this->connection) {
-            return;
+    private function init_redis_if_required(): void {
+        if (is_null($this->connection)) {
+            $this->init();
         }
-
-        $this->handler_destroy($sid);
     }
 
     // The following functions exist to facilitate unit tests and will not do
@@ -710,7 +863,7 @@ EOF;
 
         $list = $this->connection->command('keys', 'phpunit*');
         foreach ($list as $keyname) {
-            $this->connection->command('del', $keyname);
+            $this->connection->command('unlink', $keyname);
         }
         $this->connection->close();
     }

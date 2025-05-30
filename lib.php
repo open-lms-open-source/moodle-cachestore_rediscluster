@@ -409,6 +409,79 @@ class cachestore_rediscluster extends cache_store implements cache_is_key_aware,
     }
 
     /**
+     * Scan is a directed command. It has to go to a specific node one at a time.
+     */
+    public function scan($key) {
+        if ($this->retrylimit < 0) {
+            $this->retrylimit = 0;
+        }
+
+        $success = false;
+        $lastexception = null;
+        $result = [];
+        $prefix = $this->redis->getOption(Redis::OPT_PREFIX);
+        $hosts = $this->redis->_masters();
+        $this->redis->setOption(Redis::OPT_PREFIX, '');
+        $this->redis->setOption(RedisCluster::OPT_SLAVE_FAILOVER, RedisCluster::FAILOVER_NONE);
+
+        while ($this->retrylimit >= 0) {
+            $this->retrylimit--;
+            try {
+                foreach ($hosts as $host) {
+                    $iterator = null;
+                    while (false !== ($keys = $this->redis->scan($iterator, $host, $prefix . $key, 1000))) {
+                        $result = array_merge($result, $keys);
+                        if ($iterator == 0) {
+                            break;
+                        }
+                    }
+                }
+                $success = true;
+                break;
+            } catch (Exception $e) {
+                $lastexception = $e;
+                // Always retry once on CLUSTERDOWN after a short delay.
+                if (preg_match('#CLUSTERDOWN#', $e->getMessage())) {
+                    $this->retrylimit--;
+                    usleep(rand(100000, 200000));
+                    try {
+                        foreach ($hosts as $host) {
+                            $iterator = null;
+                            while (false !== ($keys = $this->redis->scan($iterator, $host, $prefix . $key, 1000))) {
+                                $result = array_merge($result, $keys);
+                                if ($iterator == 0) {
+                                    continue;
+                                }
+                            }
+                        }
+                        $success = true;
+                        break;
+                    } catch (Exception $e) {
+                        $lastexception = $e;
+                    }
+                }
+            }
+        }
+        $this->retrylimit = 0;
+
+        // Return the redis client to the previous state.
+        $this->redis->setOption(Redis::OPT_PREFIX, $prefix);
+        $this->redis->setOption(RedisCluster::OPT_SLAVE_FAILOVER, $this->config['failover']);
+
+        if (!$success) {
+            throw $lastexception;
+        }
+
+        foreach ($result as $i => $key) {
+            if (str_starts_with($key, $prefix)) {
+                $result[$i] = substr($key, strlen($prefix));
+            }
+        }
+
+        return $result;
+    }
+
+    /**
      * Determine if the store is ready for use.
      *
      * @return bool
