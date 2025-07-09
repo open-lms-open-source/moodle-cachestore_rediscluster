@@ -32,7 +32,7 @@ defined('MOODLE_INTERNAL') || die();
  * @runClassInSeparateProcess
  */
 
-class cachestore_rediscluster_session_testcase extends advanced_testcase {
+class cachestore_rediscluster_session_test extends advanced_testcase {
 
     protected $sesshandler = null;
 

@@ -36,12 +36,13 @@ require_once(__DIR__.'/fixtures/testable_ratelimiter.php');
  * @copyright  Copyright (c) 2021 Open LMS (https://www.openlms.net)
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class cachestore_rediscluster_ratelimiter_testcase extends advanced_testcase {
+class cachestore_rediscluster_ratelimiter_test extends advanced_testcase {
 
     /**
      * Some lock types will store data in the database.
      */
     protected function setUp(): void {
+        parent::setUp();
         $this->resetAfterTest(true);
 
         $instance = new cachestore_rediscluster('RedisCluster Test', cachestore_rediscluster::unit_test_configuration());
@@ -50,11 +51,6 @@ class cachestore_rediscluster_ratelimiter_testcase extends advanced_testcase {
             // We're not configured to use RedisCluster. Skip.
             $this->markTestSkipped();
         }
-    }
-
-    protected function tearDown(): void {
-        $keys = ['abc', 'def', 'ghi'];
-        testable_ratelimiter::get_instance()->testing_cleanup($keys);
     }
 
     /**

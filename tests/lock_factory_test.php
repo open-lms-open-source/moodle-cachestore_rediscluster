@@ -35,7 +35,7 @@ require_once(__DIR__.'/../lib.php');
  * @copyright  Copyright (c) 2021 Open LMS (https://www.openlms.net)
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class cachestore_rediscluster_lock_factory_testcase extends advanced_testcase {
+class cachestore_rediscluster_lock_factory_test extends advanced_testcase {
 
     /**
      * Some lock types will store data in the database.
