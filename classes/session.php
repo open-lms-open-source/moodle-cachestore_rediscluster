@@ -215,6 +215,16 @@ class session extends handler implements SessionHandlerInterface {
 
     #[\Override]
     public function init(): bool {
+        $this->init_without_handler();
+
+        $result = session_set_save_handler($this);
+        if (!$result) {
+            throw new \Exception('Session handler is misconfigured');
+        }
+        return true;
+    }
+
+    public function init_without_handler(): bool {
         global $CFG;
 
         require_once("{$CFG->dirroot}/cache/stores/rediscluster/lib.php");
@@ -236,10 +246,6 @@ class session extends handler implements SessionHandlerInterface {
 
         $this->connection = new \cachestore_rediscluster(null, $this->config);
 
-        $result = session_set_save_handler($this);
-        if (!$result) {
-            throw new \Exception('Session handler is misconfigured');
-        }
         return true;
     }
 
@@ -845,7 +851,7 @@ EOF;
      */
     private function init_redis_if_required(): void {
         if (is_null($this->connection)) {
-            $this->init();
+            $this->init_without_handler();
         }
     }
 
