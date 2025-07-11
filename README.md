@@ -38,6 +38,7 @@ $CFG->session_rediscluster = [
     'acquire_lock_timeout' => 60,
     'lock_expire' => 600,
     'max_waiters' => 10,
+    'waiting_exclusions' => [],
 ];
 ```
 
@@ -48,12 +49,36 @@ The following options govern session locking:
 * acquire_lock_timeout: How long to wait for a lock to be released before giving up
 * lock_expire: How long before a lock is released automatically
 * max_waiters: How many threads can a session have waiting for a lock
+* waiting_exclusions: Rules about scripts don't count towards the max_waiter count
 
 Max waiters lets you define how many how many php threads a single user is allowed to have waiting for a session lock. Requests that don't take a session lock are unaffected.
 
 By default, max_waiters is set to 10. Set it to 0 to use default Moodle™ behaviour.
 
 Scripts with the `NO_SESSION_LOCK` define set to `true` ignore the max waiter behaviour.
+
+Requests that match a rule defined in the `waiting_exclusions` array ignore the max waiter behaviour and also do not count towards the number of active requests - avoiding blocking other scripts (other scripts are still restricted by the session lock).
+
+Rule format:
+```
+$CFG->session_rediscluster = [
+    'waiting_exclusions' => [
+        // Example allowing admin index page.
+        [
+            // Must include a script, relative to root path and including the leading slash.
+            'script' => '/admin/index.php',
+        ],
+
+        // Example allowing calls to the tiny_autosave_reset_session service.
+        [
+            'script' => '/lib/ajax/service.php',
+            // When script is `/lib/ajax/service.php` we can include a `method`. This will check
+            // the requested method matches along with the script.
+            'method' => 'tiny_autosave_reset_session',
+        ],
+    ],
+];
+```
 
 ### auth_saml2 session handler
 

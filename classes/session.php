@@ -131,6 +131,11 @@ class session extends handler implements SessionHandlerInterface {
      */
     protected $waiting = false;
 
+    /**
+     * List of rules to compare the current request against.
+     */
+    protected array $waiting_exclusions = [];
+
     /** @var string $sessionkeyprefix the prefix for the session key */
     protected string $sessionkeyprefix = 'session_';
 
@@ -192,6 +197,10 @@ class session extends handler implements SessionHandlerInterface {
 
         if (isset($CFG->session_rediscluster['max_waiters'])) {
             $this->maxwaiters = (int)$CFG->session_rediscluster['max_waiters'];
+        }
+
+        if (isset($CFG->session_rediscluster['waiting_exclusions']) && is_array($CFG->session_rediscluster['waiting_exclusions'])) {
+            $this->waiting_exclusions = $CFG->session_rediscluster['waiting_exclusions'];
         }
 
         $this->lockexpire = $CFG->sessiontimeout;
@@ -552,20 +561,23 @@ class session extends handler implements SessionHandlerInterface {
 
         $haslock = isset($this->locks[$id]) && $this->clock->time() < $this->locks[$id];
         $startlocktime = $this->clock->time();
-        $waitkey = "{$lockkey}.waiting";
 
-        // Create the waiting key, or increment it if we end up queued.
-        $waitpos = $this->increment($waitkey, $this->lockexpire);
-        $this->waiting = true;
+        if ($this->request_counts_towards_waitlimit()) {
+            $waitkey = "{$lockkey}.waiting";
 
-        if ($this->maxwaiters >= 0 && $waitpos > $this->maxwaiters) {
-            $this->decrement($waitkey);
-            $this->waiting = false;
-            $this->error('sessionwaiterr');
+            // Create the waiting key, or increment it if we end up queued.
+            $waitpos = $this->increment($waitkey, $this->lockexpire);
+            $this->waiting = true;
+
+            if ($this->maxwaiters >= 0 && $waitpos > $this->maxwaiters) {
+                $this->decrement($waitkey);
+                $this->waiting = false;
+                $this->error('sessionwaiterr');
+            }
+
+            // Ensure on timeout or exception that we try to decrement the waiter count.
+            \core_shutdown_manager::register_function([$this, 'release_waiter'], [$waitkey]);
         }
-
-        // Ensure on timeout or exception that we try to decrement the waiter count.
-        \core_shutdown_manager::register_function([$this, 'release_waiter'], [$waitkey]);
 
         // Waiting room - reduce lock polling time for subsequent refreshes.
         $waitroompoll = optional_param('sst', 0, PARAM_INT) ? $this->config['waitingroom_poll'] :
@@ -602,8 +614,10 @@ class session extends handler implements SessionHandlerInterface {
             if ($reqget && !AJAX_SCRIPT
                 && $this->config['waitingroom_start'] > 0
                 && ($this->clock->time() > $startlocktime + $waitroompoll)) {
-                $this->decrement($waitkey);
-                $this->waiting = false;
+                if ($this->request_counts_towards_waitlimit()) {
+                    $this->decrement($waitkey);
+                    $this->waiting = false;
+                }
                 if (!empty($this->config['waitingroom_statuscode'])) {
                     header("HTTP/1.1 {$this->config['waitingroom_statuscode']}");
                 }
@@ -625,8 +639,10 @@ class session extends handler implements SessionHandlerInterface {
             usleep($delay * 1000);
         }
 
-        $this->decrement($waitkey);
-        $this->waiting = false;
+        if ($this->request_counts_towards_waitlimit()) {
+            $this->decrement($waitkey);
+            $this->waiting = false;
+        }
 
         if (!$haslock) {
             $this->error('sessionwaiterr');
@@ -777,7 +793,6 @@ EOF;
         return 0;
     }
 
-
     protected function increment($k, $ttl) {
         // Ensure key is created with ttl before proceeding.
         if (empty($this->connection->command('exists', $k))) {
@@ -797,6 +812,52 @@ EOF;
 
         throw new \Exception('sessionhandlerproblem', 'error', '', null,
                     'Unable to get a session waiter.');
+    }
+
+    /**
+     * Should the currently requested page count towards the max concurrent waiting requests or not.
+     */
+    protected function request_counts_towards_waitlimit(): bool {
+        global $SCRIPT;
+
+        static $result = null;
+
+        if ($result !== null) {
+            return $result;
+        }
+
+        $result = true;
+
+        $rules = $this->waiting_exclusions;
+        foreach ($rules as $rule) {
+            if (! is_array($rule)) {
+                continue;
+            }
+
+            if (! empty($rule['script'])) {
+                if ($rule['script'] != $SCRIPT) {
+                    // Rule is for a different script, move on to the next rule.
+                    continue;
+                }
+                if ($rule['script'] == '/lib/ajax/service.php' && !empty($rule['method'])) {
+                    $requests = json_decode(file_get_contents('php://input'), true);
+                    foreach ($requests as $req) {
+                        if (!empty($req['methodname']) && $req['methodname'] == $rule['method']) {
+                            $result = false;
+                            break 2;
+                        }
+                    }
+                    // None of the methods matched, mve on to the next rule.
+                    continue;
+                }
+
+                // Met all conditions, disable counting towards waitlimit.
+                $result = false;
+                break;
+            }
+        }
+
+        return $result;
     }
 
     #[\Override]
