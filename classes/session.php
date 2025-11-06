@@ -374,7 +374,9 @@ class session extends handler implements SessionHandlerInterface {
             if ($keys['timecreated'] != $keys['timemodified']) {
                 $maxlifetime = $this->get_maxlifetime($userid);
                 $this->connection->command('expire', $this->sessionkeyprefix . $id, $maxlifetime);
-                $this->connection->command('expire', $this->userkeyprefix . $userid, $maxlifetime);
+                if ($userid != 0) {
+                    $this->connection->command('expire', $this->userkeyprefix . $userid, $maxlifetime);
+                }
             }
         } catch (\RedisException $e) {
             debugging('Failed talking to redis: '.$e->getMessage(), DEBUG_DEVELOPER);
@@ -409,9 +411,12 @@ class session extends handler implements SessionHandlerInterface {
             'lastip' => getremoteaddr(),
         ];
 
-        $userhashkey = $this->userkeyprefix . $userid;
-        $this->connection->command('hSet', $userhashkey, $sid, $timestamp);
-        $this->connection->command('expire', $userhashkey, $maxlifetime);
+        // Do not manage store mapping from user to sid for non-login user (0).
+        if ($userid != 0) {
+            $userhashkey = $this->userkeyprefix . $userid;
+            $this->connection->command('hSet', $userhashkey, $sid, $timestamp);
+            $this->connection->command('expire', $userhashkey, $maxlifetime);
+        }
 
         $sessionhashkey = $this->sessionkeyprefix . $sid;
         $this->connection->command('hmSet', $sessionhashkey, $sessiondata);
@@ -458,7 +463,9 @@ class session extends handler implements SessionHandlerInterface {
         // Update the expiry time.
         $maxlifetime = $this->get_maxlifetime($record->userid);
         $this->connection->command('expire', $sessionhashkey, $maxlifetime);
-        $this->connection->command('expire', $userhashkey, $maxlifetime);
+        if ($record->userid != 0) {
+            $this->connection->command('expire', $userhashkey, $maxlifetime);
+        }
 
         return true;
     }
